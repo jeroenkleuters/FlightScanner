@@ -1,0 +1,32 @@
+:root {
+  color-scheme: dark;
+
+  font:
+    14px/1.4 system-ui,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  color: #e6e6e6;
+  background: #10141a;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+.app-shell {
+  width: 100%;
+  height: 100%;
+}

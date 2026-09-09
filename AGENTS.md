@@ -255,28 +255,27 @@ checks do not make the Blueprint unusable.
 
 ## Commands
 
-**No application code exists yet.** There is no `package.json`, so none of the
-commands below are runnable until build-plan feature 1 (Project scaffold) is
-implemented. Do not invent or run them before then.
-
-Feature 1 creates a Vite + React + TypeScript app and will replace this block
-with the real commands, expected to be:
-
-- Dev server: `npm run dev` (Vite default port 5173, confirm on first run)
+- Dev server: `npm run dev` (Vite, http://localhost:5173)
 - Build: `npm run build`
-- Preview production build: `npm run preview`
+- Preview production build: `npm run preview` (http://localhost:4173)
+- Typecheck: `npm run typecheck`
 - Lint: `npm run lint`
 - Format: `npm run format`
+- Format check: `npm run format:check`
 - Test: `npm test`
+- Test watch: `npm run test:watch`
 - Verify: `npm run verify` (typecheck, tests, build)
-- Mock SkySpy feed: `npm run mock` (added by feature 4)
 
-Package manager: npm, chosen by feature 1. No lockfile exists yet.
+Package manager: npm, with `package-lock.json` committed. Node 20 or newer.
 
-**Testing gate is currently OFF.** No `test` command is declared in this section,
-so per `blueprint/context/coding-standards.md` tests are not yet a required gate.
-Feature 1 installs Vitest and declares `test` here, which turns the gate on for
-logic-bearing steps from that point forward.
+Copy `.env.example` to `.env` before running the app. `src/config.ts` validates
+the environment once at startup and is the only module that reads
+`import.meta.env`.
+
+**Testing gate is ON.** `test` is declared above, so per
+`blueprint/context/coding-standards.md` logic-bearing steps need focused tests
+from here on. The runner is Vitest with jsdom and React Testing Library, and an
+empty run fails rather than passing.
 
 Browser testing is also opt-in. Run `/browser-tests` or `$browser-tests` to add
 or normalize a browser harness and document its exact command as `Browser

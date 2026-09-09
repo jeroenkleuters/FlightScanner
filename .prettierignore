@@ -1,0 +1,13 @@
+# Generated and vendored output
+node_modules
+dist
+coverage
+package-lock.json
+
+# Blueprint workflow files and project docs are hand written prose.
+# Prettier must never reflow them.
+.agents
+.claude
+blueprint
+docs
+*.md

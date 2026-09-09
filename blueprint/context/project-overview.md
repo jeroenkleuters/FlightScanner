@@ -1,6 +1,6 @@
 # FlightScanner - Project Overview
 
-<!-- blueprint:source-hash 097296cc51e4e1b828f6cf2e249d5725fd01a2ecb72b33e083fc4af47a6ffa8c -->
+<!-- blueprint:source-hash 9c0e9e5c0bbb5dc1fc8190b1df3f3581f9b077dff598896ad15596ed46153d45 -->
 
 > A live aircraft map over the SkySpy WebSocket API, built with Vite, React, and MapLibre.
 
