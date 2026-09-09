@@ -10,9 +10,11 @@
  * public deployment needs a backend proxy that holds the token instead.
  */
 
-/** Keyless dark basemap. CARTO Dark Matter needs no account or API key. */
-export const DEFAULT_MAP_STYLE_URL =
-  'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+import { DEFAULT_MAP_STYLE_URL } from './map/mapStyle'
+
+// Re-exported so callers keep one import for configuration values. The constant
+// itself lives with the map, next to the provider and attribution record.
+export { DEFAULT_MAP_STYLE_URL }
 
 export const DEFAULT_CENTER = { lat: 0, lon: 0 } as const
 export const DEFAULT_ZOOM = 6

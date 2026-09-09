@@ -20,7 +20,7 @@ specs refer to those IDs.
 ### v1 - live map
 
 - [x] 1. **Project scaffold** - Vite + React + TS, lint, format, Vitest, env config, verify script → `blueprint/context/features/01-scaffold-spec.md`
-- [ ] 2. **Map shell** - full-viewport dark MapLibre map centred on the configured location → `blueprint/context/features/02-map-shell-spec.md`
+- [x] 2. **Map shell** - full-viewport dark MapLibre map centred on the configured location → `blueprint/context/features/02-map-shell-spec.md`
 - [ ] 3. **Live instance verification** - settle the WebSocket handshake and capture real message fixtures → `blueprint/context/features/03-live-instance-verification-spec.md`
 - [ ] 4. **Mock WebSocket server** - replay fixtures as a moving feed with fault injection → `blueprint/context/features/04-mock-websocket-server-spec.md`
 - [ ] 5. **SkySpy WebSocket client** - authenticated connect, subscribe, typed dispatch, backoff reconnect → `blueprint/context/features/05-skyspy-websocket-client-spec.md`
