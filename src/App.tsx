@@ -3,6 +3,7 @@ import type { PollStatus } from './api/pollSchedule'
 import { AircraftLayer } from './map/AircraftLayer'
 import { FlightMap } from './map/FlightMap'
 import { useAircraftStore } from './store/useAircraftStore'
+import { Legend } from './ui/Legend'
 
 const STATUS_TEXT: Record<PollStatus, string> = {
   idle: 'Starting',
@@ -29,6 +30,7 @@ function App() {
       <FlightMap>
         <AircraftLayer store={store} />
       </FlightMap>
+      <Legend />
       {/* Provisional. Feature 10 replaces this with the real status bar. */}
       <p className="poll-readout" aria-live="polite">
         <span>{STATUS_TEXT[status]}</span>

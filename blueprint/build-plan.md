@@ -34,7 +34,7 @@ specs refer to those IDs.
 - [x] 5. **Polling client** - interval loop over the shipped transport against the one fixed bounding box, visibility pause, backoff on failure, credit budget tracking
 - [x] 6. **Aircraft store** - pure Map<hex, Aircraft> reconciling successive full snapshots, deriving staleness from `lastContact` and dropping an aircraft 30 s after the last snapshot that held it
 - [x] 7. **Aircraft layer** - one GeoJSON symbol layer, heading-rotated icons, throttled updates → `blueprint/context/features/07-aircraft-layer-spec.md`
-- [ ] 8. **FR24-style visual pass** - altitude colour ramp, zoom sizing, labels, stale fading, legend → `blueprint/context/features/08-visual-pass-spec.md`
+- [x] 8. **FR24-style visual pass** - altitude colour ramp, zoom sizing, labels, stale fading, legend → `blueprint/context/features/08-visual-pass-spec.md`
 - [ ] 9. **Selection, detail panel, and trail** - click to select, fleet dims, trail draws, live telemetry → `blueprint/context/features/09-selection-detail-trail-spec.md`
 - [ ] 10. **Poll status and resilience** - status indicator, remaining credits, stale snapshot warning, manual refresh, an "outside the covered box" state, and the four failure modes in project plan §7
 - [ ] 11. **Documentation and polish** - README, loading and error states, responsive layout, accessibility → `blueprint/context/features/11-docs-and-polish-spec.md`

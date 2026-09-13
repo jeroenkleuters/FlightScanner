@@ -31,6 +31,52 @@ body {
   height: 100%;
 }
 
+/* The altitude key. Bottom left: the navigation control and the mandatory
+   attribution both sit bottom right, and the poll readout has the top left. */
+.legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(16, 20, 26, 0.8);
+  color: #cfd6df;
+  /* Floats over the map: never swallow a drag, or feature 9's click. */
+  pointer-events: none;
+}
+
+.legend-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8b96a5;
+}
+
+.legend-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex: none;
+}
+
 /* Provisional readout for the polling loop. Feature 10 replaces it. */
 .poll-readout {
   position: absolute;
