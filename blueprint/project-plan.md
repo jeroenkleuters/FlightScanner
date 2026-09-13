@@ -154,10 +154,16 @@ one bounding box, and OpenSky coverage varies by region.
 
 ## 8. Deployment - Where and how will this ship?
 
-**No target chosen yet**, but deployment is now possible in principle, which it
-was not under the direct-to-API design. The app is a static SPA (`vite build` →
-`dist/`) plus one proxy endpoint, so a host that serves static files alongside a
-serverless function fits naturally.
+**Vercel.** The repository is imported as a Vercel project. The app is a static
+SPA (`vite build` → `dist/`) plus two proxy endpoints, so a host that serves
+static files alongside serverless functions fits naturally. `vercel.json` pins
+the build command, `dist/` as the output directory, and an SPA rewrite that
+leaves `/api/` alone; `api/opensky/states.ts` and `api/health.ts` are the
+function entrypoints and share `src/server/router.ts` with the dev and preview
+servers. The OpenSky credentials are set as Vercel project environment
+variables, so the deployment runs authenticated at 4000 credits per day.
+`docs/proxy.md` is the runbook. `/release` has not been run, so readiness checks
+and smoke tests are still unrecorded.
 
 Constraints:
 
@@ -169,8 +175,9 @@ Constraints:
    one 4000 per day budget across everyone who loads it, so the poll interval and
    any caching are deployment decisions, not just client ones.
 
-Client env vars by name: `VITE_OPENSKY_API_BASE`, `VITE_OPENSKY_AUTH_URL`,
+Client env vars by name, all optional and baked into the bundle at build time:
 `VITE_OPENSKY_POLL_MS`, `VITE_MAP_STYLE_URL`, `VITE_DEFAULT_CENTER`,
-`VITE_DEFAULT_ZOOM`. Server-side only: the OpenSky client ID and secret.
+`VITE_DEFAULT_ZOOM`. Server-side only: `OPENSKY_CLIENT_ID`,
+`OPENSKY_CLIENT_SECRET`, `OPENSKY_API_BASE`, `OPENSKY_AUTH_URL`.
 
 No database, no workers, no cron. Health check applies to the proxy only.

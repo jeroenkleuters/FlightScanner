@@ -47,8 +47,30 @@ rather than silently downgraded to the smaller anonymous quota.
 
 ## On Vercel
 
+Vercel is the deployment target and the repository is imported as a Vercel
+project. `vercel.json` holds the whole configuration:
+
+- `buildCommand: npm run build` and `outputDirectory: dist` for the SPA.
+- A rewrite sending every non-`/api/` path to `/index.html`, so client routes
+  and deep links resolve while the functions keep their own paths.
+
 `api/opensky/states.ts` and `api/health.ts` are the function entrypoints; both
-delegate to `src/server/router.ts`. Set the two credential variables as project
-environment variables, not in a committed file. The credit budget is per
-account, so a public deployment shares one 4000 per day allowance across
-everyone who loads the app.
+delegate to `src/server/router.ts`, the same router `npm run dev` and
+`npm run preview` mount. There is no deploy-only code path.
+
+Environment variables are set in the Vercel project, not in a committed file.
+`OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET` are both set, so the deployment
+runs authenticated at 4000 credits per day rather than the anonymous 400. Set
+them for every environment that should be authenticated: Preview and Development
+deployments do not inherit Production values. The `VITE_` variables are optional
+and compiled into the bundle at build time, so changing one needs a redeploy,
+not just a restart.
+
+After a deploy, `/api/health` is the first thing to check: it costs no credits
+and reports whether the function holds credentials. It answers
+`{"status":"ok","credentials":"configured"}` when the pair is present; a
+`"credentials":"anonymous"` on a deployment that should be authenticated means
+the variables are missing from that environment's scope.
+
+The credit budget is per OpenSky account, so a public deployment shares one 4000
+per day allowance across everyone who loads the app.

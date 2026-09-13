@@ -268,6 +268,11 @@ checks do not make the Blueprint unusable.
 
 Package manager: npm, with `package-lock.json` committed. Node 20 or newer.
 
+Deployment target: **Vercel**, with the repository imported as a Vercel project.
+`vercel.json` holds the build command, output directory, and SPA rewrite; the
+OpenSky credentials are Vercel project environment variables, never committed.
+`docs/proxy.md` is the runbook. Deploying remains an explicit `/release` step.
+
 Copy `.env.example` to `.env` before running the app. `src/config.ts` validates
 the environment once at startup and is the only module that reads
 `import.meta.env`.

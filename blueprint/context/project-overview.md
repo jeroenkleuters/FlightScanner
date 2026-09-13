@@ -41,10 +41,10 @@ that is the Flightradar24 moment the rest of v1 exists to support.
 
 1. **Project scaffold** - Vite + React + TS, lint, format, Vitest, env config, `verify` script. **Done.**
 2. **Map shell** - full-viewport dark MapLibre map centred on the configured location. **Done.**
-3. **Backend proxy** - stateless proxy for OpenSky states and tokens, credentials server side, verified from the browser.
-4. **Mock feed server** - replay the committed fixture as a moving feed with fault injection.
-5. **Polling client** - interval loop over the shipped transport, visibility pause, backoff, credit tracking.
-6. **Aircraft store** - pure `Map<hex, Aircraft>` reconciling successive full snapshots, deriving departures and staleness.
+2. **Backend proxy** - stateless proxy for OpenSky states and tokens, credentials server side, verified from the browser.
+3. **Mock feed server** - replay the committed fixture as a moving feed with fault injection.
+4. **Polling client** - interval loop over the shipped transport, visibility pause, backoff, credit tracking.
+5. **Aircraft store** - pure `Map<hex, Aircraft>` reconciling successive full snapshots, deriving departures and staleness.
 7. **Aircraft layer** - one GeoJSON symbol layer, heading-rotated icons, throttled updates.
 8. **FR24-style visual pass** - altitude colour ramp, zoom sizing, labels, stale fading, legend.
 9. **Selection, detail panel, and trail** - click to select, fleet dims, trail draws, live telemetry.
@@ -251,11 +251,19 @@ because the view is one bounding box and OpenSky coverage varies by region.
 
 ## Deployment
 
-> **No target chosen.** `/release` has not been run. Deployment is now possible in
-> principle, which it was not under the direct-to-API design.
+**Target: Vercel.** The repository is imported as a Vercel project. `/release`
+has not been run, so deploy readiness and smoke tests are not yet documented as
+a checked pass.
 
-A static SPA (`vite build` → `dist/`) plus one proxy endpoint, so a host serving
-static files alongside a serverless function fits naturally.
+A static SPA (`vite build` → `dist/`) plus two proxy endpoints, which is why a
+host serving static files alongside serverless functions fits naturally.
+`vercel.json` pins the build command, `dist/` as the output, and an SPA rewrite
+that leaves `/api/` alone. `api/opensky/states.ts` and `api/health.ts` are the
+function entrypoints and share `src/server/router.ts` with the dev and preview
+servers, so there is no deploy-only code path. `OPENSKY_CLIENT_ID` and
+`OPENSKY_CLIENT_SECRET` are set as Vercel project variables, so the deployment
+runs authenticated at 4000 credits per day. See `docs/proxy.md` for the
+runbook.
 
 1. **The proxy is required in every environment**, including local development.
    Vite's dev proxy covers development; production needs the real thing.
@@ -265,9 +273,10 @@ static files alongside a serverless function fits naturally.
    one 4000 per day budget across everyone who loads it, making the poll interval
    and any caching deployment decisions, not just client ones.
 
-Client env vars by name: `VITE_OPENSKY_API_BASE`, `VITE_OPENSKY_AUTH_URL`,
+Client env vars by name, all optional and baked into the bundle at build time:
 `VITE_OPENSKY_POLL_MS`, `VITE_MAP_STYLE_URL`, `VITE_DEFAULT_CENTER`,
-`VITE_DEFAULT_ZOOM`. Server-side only: the OpenSky client ID and secret.
+`VITE_DEFAULT_ZOOM`. Server-side only: `OPENSKY_CLIENT_ID`,
+`OPENSKY_CLIENT_SECRET`, `OPENSKY_API_BASE`, `OPENSKY_AUTH_URL`.
 
 No database, workers, or cron. Health check applies to the proxy only.
 
@@ -275,19 +284,16 @@ No database, workers, or cron. Health check applies to the proxy only.
 
 > Resolve these in the plans, then re-run `/overview`.
 
-1. **Where does the proxy run?** Feature 3 needs a target to build against.
-   Vercel functions, a small Node server, and Cloudflare Workers all fit, but no
-   plan names one. This also decides whether `/release` targets Vercel or Render.
-2. **Which bounding box, and does it follow the map?** `VITE_DEFAULT_CENTER` is
+1. **Which bounding box, and does it follow the map?** `VITE_DEFAULT_CENTER` is
    set to Amsterdam, but no plan says whether the polled box is fixed or tracks
    the viewport. Tracking the viewport means a new box on every pan, which
    interacts directly with the credit budget.
-3. **How long before an absent aircraft is dropped?** Snapshot reconciliation
+2. **How long before an absent aircraft is dropped?** Snapshot reconciliation
    needs a grace period. The old 60 s stale / 5 min drop came from a 10 Hz stream
    and is unlikely to be right at a 30 s poll.
-4. **Nine stale spec files and `docs/flight-map-plan.md`.** Listed above. They
+3. **Nine stale spec files and `docs/flight-map-plan.md`.** Listed above. They
    describe a WebSocket architecture that no longer exists and will mislead
    `/feature` until rewritten.
-5. **Six open findings in the ledger.** F-01 and F-02 from the OpenSky fix are
+4. **Six open findings in the ledger.** F-01 and F-02 from the OpenSky fix are
    P2 and both partly dissolve once the proxy exists, since credentials move
    server side. Worth re-auditing after feature 3 rather than fixing twice.
