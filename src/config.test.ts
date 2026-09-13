@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_MAP_STYLE_URL,
-  DEFAULT_OPENSKY_API_BASE,
-  DEFAULT_OPENSKY_AUTH_URL,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_ZOOM,
   MIN_POLL_INTERVAL_MS,
@@ -10,16 +8,9 @@ import {
   type RawEnv,
 } from './config'
 
-const CLIENT_ID = 'flightscanner-api-client'
-const SECRET = 'super-secret-client-secret-value'
-
 describe('parseConfig', () => {
   it('parses a fully valid environment', () => {
     const result = parseConfig({
-      VITE_OPENSKY_API_BASE: 'https://opensky.example.com/api/',
-      VITE_OPENSKY_AUTH_URL: 'https://auth.example.com/token///',
-      VITE_OPENSKY_CLIENT_ID: CLIENT_ID,
-      VITE_OPENSKY_CLIENT_SECRET: SECRET,
       VITE_OPENSKY_POLL_MS: '60000',
       VITE_MAP_STYLE_URL: 'https://tiles.example.com/style.json',
       VITE_DEFAULT_CENTER: '52.3676,4.9041',
@@ -27,10 +18,6 @@ describe('parseConfig', () => {
     })
 
     expect(result).toEqual({
-      openSkyApiBase: 'https://opensky.example.com/api',
-      openSkyAuthUrl: 'https://auth.example.com/token',
-      openSkyClientId: CLIENT_ID,
-      openSkyClientSecret: SECRET,
       pollIntervalMs: 60000,
       mapStyleUrl: 'https://tiles.example.com/style.json',
       defaultCenter: { lat: 52.3676, lon: 4.9041 },
@@ -38,72 +25,14 @@ describe('parseConfig', () => {
     })
   })
 
-  it('needs no variables at all, defaulting to anonymous OpenSky access', () => {
+  it('needs no variables at all', () => {
     const result = parseConfig({})
 
     expect(result).toEqual({
-      openSkyApiBase: DEFAULT_OPENSKY_API_BASE,
-      openSkyAuthUrl: DEFAULT_OPENSKY_AUTH_URL,
-      openSkyClientId: undefined,
-      openSkyClientSecret: undefined,
       pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
       mapStyleUrl: DEFAULT_MAP_STYLE_URL,
       defaultCenter: { lat: 0, lon: 0 },
       defaultZoom: DEFAULT_ZOOM,
-    })
-  })
-
-  describe('OpenSky URLs', () => {
-    it.each(['VITE_OPENSKY_API_BASE', 'VITE_OPENSKY_AUTH_URL'])(
-      'falls back to the default when %s is blank',
-      (key) => {
-        expect(() => parseConfig({ [key]: '   ' })).not.toThrow()
-      },
-    )
-
-    it.each(['VITE_OPENSKY_API_BASE', 'VITE_OPENSKY_AUTH_URL'])(
-      'rejects a relative %s',
-      (key) => {
-        expect(() => parseConfig({ [key]: '/api' })).toThrow(key)
-      },
-    )
-
-    it.each(['VITE_OPENSKY_API_BASE', 'VITE_OPENSKY_AUTH_URL'])(
-      'rejects a non http scheme on %s',
-      (key) => {
-        expect(() => parseConfig({ [key]: 'ws://opensky.example.com' })).toThrow(
-          key,
-        )
-      },
-    )
-  })
-
-  describe('OpenSky credentials', () => {
-    it('resolves both to undefined when neither is set', () => {
-      const result = parseConfig({})
-      expect(result.openSkyClientId).toBeUndefined()
-      expect(result.openSkyClientSecret).toBeUndefined()
-    })
-
-    it('rejects a client ID without a secret', () => {
-      expect(() =>
-        parseConfig({ VITE_OPENSKY_CLIENT_ID: CLIENT_ID }),
-      ).toThrow('VITE_OPENSKY_CLIENT_SECRET')
-    })
-
-    it('rejects a secret without a client ID', () => {
-      expect(() =>
-        parseConfig({ VITE_OPENSKY_CLIENT_SECRET: SECRET }),
-      ).toThrow('VITE_OPENSKY_CLIENT_ID')
-    })
-
-    it('treats a whitespace only secret as absent', () => {
-      expect(() =>
-        parseConfig({
-          VITE_OPENSKY_CLIENT_ID: CLIENT_ID,
-          VITE_OPENSKY_CLIENT_SECRET: '   ',
-        }),
-      ).toThrow('VITE_OPENSKY_CLIENT_SECRET')
     })
   })
 
@@ -177,32 +106,25 @@ describe('parseConfig', () => {
     })
   })
 
-  it('never leaks the client secret in an error message', () => {
-    // Every failure path runs with valid credentials present. None may echo them.
+  it('names the offending variable without echoing its value', () => {
     const failures: RawEnv[] = [
-      { VITE_OPENSKY_API_BASE: 'not-a-url' },
-      { VITE_OPENSKY_AUTH_URL: 'not-a-url' },
       { VITE_OPENSKY_POLL_MS: '1000' },
       { VITE_MAP_STYLE_URL: 'http://tiles.example.com/s.json' },
       { VITE_DEFAULT_CENTER: 'nope' },
       { VITE_DEFAULT_ZOOM: '99' },
-      { VITE_OPENSKY_CLIENT_SECRET: undefined },
     ]
 
     for (const overrides of failures) {
+      const key = Object.keys(overrides)[0]
       let message = ''
       try {
-        parseConfig({
-          VITE_OPENSKY_CLIENT_ID: CLIENT_ID,
-          VITE_OPENSKY_CLIENT_SECRET: SECRET,
-          ...overrides,
-        })
+        parseConfig(overrides)
       } catch (error) {
         message = error instanceof Error ? error.message : String(error)
       }
 
-      expect(message).not.toBe('')
-      expect(message).not.toContain(SECRET)
+      expect(message).toContain(key)
+      expect(message).not.toContain(String(overrides[key]))
     }
   })
 })

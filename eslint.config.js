@@ -28,6 +28,11 @@ export default tseslint.config(
     },
   },
   {
+    // The proxy runs on the server: Node globals, no browser and no React.
+    files: ['api/**/*.ts', 'src/server/**/*.ts'],
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ['*.config.{js,ts}'],
     extends: [tseslint.configs.disableTypeChecked],
   },

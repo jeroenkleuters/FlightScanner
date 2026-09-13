@@ -2,13 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createOpenSkyClient,
   decodeStateVector,
+  DEFAULT_PROXY_BASE,
   type BoundingBox,
   type FetchLike,
 } from './opensky'
-
-const API_BASE = 'https://opensky.example.com/api'
-const AUTH_URL = 'https://auth.example.com/token'
-const CREDENTIALS = { clientId: 'client', clientSecret: 'secret' }
 
 const BOX: BoundingBox = { lamin: 50.5, lomin: 3, lamax: 53.8, lomax: 7.3 }
 
@@ -50,8 +47,8 @@ function statesResponse(
   return jsonResponse({ time: 1789290616, states }, { headers })
 }
 
-function tokenResponse(value: string, expiresIn = 1800): Response {
-  return jsonResponse({ access_token: value, expires_in: expiresIn })
+function proxyError(code: string, status: number): Response {
+  return jsonResponse({ error: code }, { status })
 }
 
 /** Returns responses in order, recording every call. */
@@ -136,138 +133,41 @@ describe('decodeStateVector', () => {
 })
 
 describe('createOpenSkyClient', () => {
-  describe('anonymous access', () => {
-    it('sends no Authorization header and requests no token', async () => {
+  describe('the proxy request', () => {
+    it('asks the same-origin proxy for the bounding box', async () => {
       const { fetchImpl, calls } = fakeFetch([statesResponse([LIVE_VECTOR])])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        fetch: fetchImpl,
-      })
+      const client = createOpenSkyClient({ fetch: fetchImpl })
 
       const result = await client.fetchStates(BOX)
 
       expect(result.status).toBe('found')
       expect(calls).toHaveLength(1)
       expect(calls[0].url).toBe(
-        `${API_BASE}/states/all?lamin=50.5&lomin=3&lamax=53.8&lomax=7.3`,
+        `${DEFAULT_PROXY_BASE}/states?lamin=50.5&lomin=3&lamax=53.8&lomax=7.3`,
       )
-      expect(calls[0].init?.headers).toBeUndefined()
-      expect(client.isAuthenticated()).toBe(false)
     })
-  })
 
-  describe('authenticated access', () => {
-    it('requests a token once and reuses it across polls', async () => {
-      const { fetchImpl, calls } = fakeFetch([
-        tokenResponse('token-one'),
-        statesResponse([]),
-        statesResponse([]),
-      ])
+    it('sends no credential of any kind', async () => {
+      const { fetchImpl, calls } = fakeFetch([statesResponse([])])
+      const client = createOpenSkyClient({ fetch: fetchImpl })
+
+      await client.fetchStates(BOX)
+
+      expect(calls[0].init).toBeUndefined()
+      // One request only: the token exchange belongs to the proxy now.
+      expect(calls).toHaveLength(1)
+    })
+
+    it('honours an overridden proxy base', async () => {
+      const { fetchImpl, calls } = fakeFetch([statesResponse([])])
       const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        credentials: CREDENTIALS,
         fetch: fetchImpl,
-        now: () => 1_000_000,
+        proxyBase: '/elsewhere',
       })
 
       await client.fetchStates(BOX)
-      await client.fetchStates(BOX)
 
-      expect(calls).toHaveLength(3)
-      expect(calls[0].url).toBe(AUTH_URL)
-      expect(calls[0].init?.method).toBe('POST')
-      expect(calls[1].init?.headers).toEqual({
-        Authorization: 'Bearer token-one',
-      })
-      expect(calls[2].init?.headers).toEqual({
-        Authorization: 'Bearer token-one',
-      })
-      expect(client.isAuthenticated()).toBe(true)
-    })
-
-    it('refreshes early, before the token actually expires', async () => {
-      const { fetchImpl, calls } = fakeFetch([
-        tokenResponse('token-one', 1800),
-        statesResponse([]),
-        tokenResponse('token-two', 1800),
-        statesResponse([]),
-      ])
-      let clock = 0
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        credentials: CREDENTIALS,
-        fetch: fetchImpl,
-        now: () => clock,
-      })
-
-      await client.fetchStates(BOX)
-      // Inside the 1800 s lifetime but within the 60 s refresh margin.
-      clock = 1_750_000
-      await client.fetchStates(BOX)
-
-      expect(calls).toHaveLength(4)
-      expect(calls[3].init?.headers).toEqual({
-        Authorization: 'Bearer token-two',
-      })
-    })
-
-    it('does not spend two token requests on concurrent polls', async () => {
-      const { fetchImpl, calls } = fakeFetch([
-        tokenResponse('token-one'),
-        statesResponse([]),
-        statesResponse([]),
-      ])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        credentials: CREDENTIALS,
-        fetch: fetchImpl,
-        now: () => 0,
-      })
-
-      await Promise.all([client.fetchStates(BOX), client.fetchStates(BOX)])
-
-      expect(calls.filter((call) => call.url === AUTH_URL)).toHaveLength(1)
-    })
-
-    it('reports an auth error when the token request is rejected', async () => {
-      const { fetchImpl } = fakeFetch([
-        jsonResponse({ error: 'invalid_client' }, { status: 401 }),
-      ])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        credentials: CREDENTIALS,
-        fetch: fetchImpl,
-      })
-
-      expect(await client.fetchStates(BOX)).toEqual({
-        status: 'error',
-        reason: 'auth',
-      })
-    })
-
-    it('discards a rejected token so the next poll fetches a fresh one', async () => {
-      const { fetchImpl, calls } = fakeFetch([
-        tokenResponse('stale-token'),
-        jsonResponse({}, { status: 401 }),
-        tokenResponse('fresh-token'),
-        statesResponse([]),
-      ])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        credentials: CREDENTIALS,
-        fetch: fetchImpl,
-        now: () => 0,
-      })
-
-      expect((await client.fetchStates(BOX)).status).toBe('error')
-      expect((await client.fetchStates(BOX)).status).toBe('found')
-      expect(calls.filter((call) => call.url === AUTH_URL)).toHaveLength(2)
+      expect(calls[0].url).toContain('/elsewhere/states?')
     })
   })
 
@@ -277,8 +177,6 @@ describe('createOpenSkyClient', () => {
         statesResponse([LIVE_VECTOR, 'nonsense', [], ['abcdef']]),
       ])
       const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
         fetch: fetchImpl,
       })
 
@@ -297,8 +195,6 @@ describe('createOpenSkyClient', () => {
       const noPosition = ['abcdef', 'TEST123 ', 'Country', null, null]
       const { fetchImpl } = fakeFetch([statesResponse([noPosition])])
       const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
         fetch: fetchImpl,
       })
 
@@ -313,8 +209,6 @@ describe('createOpenSkyClient', () => {
     it('treats a null states list as an empty box, not an error', async () => {
       const { fetchImpl } = fakeFetch([statesResponse(null)])
       const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
         fetch: fetchImpl,
       })
 
@@ -330,8 +224,6 @@ describe('createOpenSkyClient', () => {
         statesResponse([], { 'X-Rate-Limit-Remaining': '3997' }),
       ])
       const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
         fetch: fetchImpl,
       })
 
@@ -345,8 +237,6 @@ describe('createOpenSkyClient', () => {
     it('leaves the credit budget undefined when the header is absent', async () => {
       const { fetchImpl } = fakeFetch([statesResponse([])])
       const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
         fetch: fetchImpl,
       })
 
@@ -360,19 +250,16 @@ describe('createOpenSkyClient', () => {
 
   describe('failure classification', () => {
     it.each([
-      [401, 'auth'],
-      [403, 'auth'],
-      [429, 'rate-limited'],
-      [500, 'server'],
-      [503, 'server'],
-      [400, 'malformed'],
-    ])('maps status %i to the %s reason', async (status, reason) => {
-      const { fetchImpl } = fakeFetch([jsonResponse({}, { status })])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        fetch: fetchImpl,
-      })
+      ['credentials-rejected', 502, 'auth'],
+      ['rate-limited', 429, 'rate-limited'],
+      ['upstream-unavailable', 502, 'network'],
+      ['upstream-malformed', 502, 'malformed'],
+      ['invalid-request', 400, 'malformed'],
+      ['method-not-allowed', 405, 'malformed'],
+      ['proxy-misconfigured', 500, 'malformed'],
+    ])('maps the %s code to the %s reason', async (code, status, reason) => {
+      const { fetchImpl } = fakeFetch([proxyError(code, status)])
+      const client = createOpenSkyClient({ fetch: fetchImpl })
 
       expect(await client.fetchStates(BOX)).toEqual({
         status: 'error',
@@ -380,24 +267,36 @@ describe('createOpenSkyClient', () => {
       })
     })
 
-    it('maps 404 to missing rather than an error', async () => {
-      const { fetchImpl } = fakeFetch([jsonResponse({}, { status: 404 })])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        fetch: fetchImpl,
-      })
+    it('treats an unrecognised code as malformed rather than guessing', async () => {
+      const { fetchImpl } = fakeFetch([proxyError('something-new', 502)])
+      const client = createOpenSkyClient({ fetch: fetchImpl })
 
-      expect(await client.fetchStates(BOX)).toEqual({ status: 'missing' })
+      expect(await client.fetchStates(BOX)).toEqual({
+        status: 'error',
+        reason: 'malformed',
+      })
     })
 
-    it('maps a thrown fetch to a network error', async () => {
-      const { fetchImpl } = fakeFetch([new TypeError('Failed to fetch')])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        fetch: fetchImpl,
+    it.each([
+      [
+        'an error body that is not JSON',
+        new Response('gateway timeout', { status: 502 }),
+      ],
+      ['an error body with no code', jsonResponse({}, { status: 502 })],
+      ['a non object error body', jsonResponse('nope', { status: 502 })],
+    ])('falls back to malformed for %s', async (_case, response) => {
+      const { fetchImpl } = fakeFetch([response])
+      const client = createOpenSkyClient({ fetch: fetchImpl })
+
+      expect(await client.fetchStates(BOX)).toEqual({
+        status: 'error',
+        reason: 'malformed',
       })
+    })
+
+    it('maps a thrown fetch to a network error: the proxy is unreachable', async () => {
+      const { fetchImpl } = fakeFetch([new TypeError('Failed to fetch')])
+      const client = createOpenSkyClient({ fetch: fetchImpl })
 
       expect(await client.fetchStates(BOX)).toEqual({
         status: 'error',
@@ -405,14 +304,11 @@ describe('createOpenSkyClient', () => {
       })
     })
 
-    it('maps an unparsable body to a malformed error', async () => {
-      const broken = new Response('<html>nope</html>', { status: 200 })
-      const { fetchImpl } = fakeFetch([broken])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        fetch: fetchImpl,
-      })
+    it('maps an unparsable success body to a malformed error', async () => {
+      const { fetchImpl } = fakeFetch([
+        new Response('<html>nope</html>', { status: 200 }),
+      ])
+      const client = createOpenSkyClient({ fetch: fetchImpl })
 
       expect(await client.fetchStates(BOX)).toEqual({
         status: 'error',
@@ -422,11 +318,7 @@ describe('createOpenSkyClient', () => {
 
     it('never throws into the caller', async () => {
       const { fetchImpl } = fakeFetch([new Error('boom')])
-      const client = createOpenSkyClient({
-        apiBase: API_BASE,
-        authUrl: AUTH_URL,
-        fetch: fetchImpl,
-      })
+      const client = createOpenSkyClient({ fetch: fetchImpl })
 
       const spy = vi.fn()
       await client.fetchStates(BOX).then(spy)

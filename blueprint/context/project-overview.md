@@ -1,31 +1,36 @@
 # FlightScanner - Project Overview
 
-<!-- blueprint:source-hash 9c0e9e5c0bbb5dc1fc8190b1df3f3581f9b077dff598896ad15596ed46153d45 -->
+<!-- blueprint:source-hash 8dd500f32f10e31adc7cca1151e8ba3829b0aa6ca3314e29a379fb711baa0c94 -->
 
-> A live aircraft map over the SkySpy WebSocket API, built with Vite, React, and MapLibre.
+> A live aircraft map over the OpenSky Network REST API, built with Vite, React,
+> and MapLibre.
 
 ## Problem
 
-SkySpy exposes a real-time ADS-B feed - a WebSocket stream of aircraft contacts
-at up to 10 Hz, plus REST lookups for airframe identity - but no map. The data is
-there and unreadable: JSON frames describing objects whose entire meaning is
-spatial.
+Public ADS-B data is available but not watchable. OpenSky Network exposes live
+aircraft state vectors over REST as positional JSON arrays whose whole meaning is
+spatial. FlightScanner renders that feed as a Flightradar24-style map you can
+watch.
 
-FlightScanner renders that stream as a map you can watch. It is also a study
-project: the goal is a genuinely resilient real-time client - correct
-reconnection, honest degraded states, a render path that survives high message
-rates - not just moving pixels.
+It is also a study project. The original goal was WebSocket lifecycle management;
+polling removes that. The remaining architectural exercises are reconciling
+successive snapshots into stable identity, a render path that stays cheap as the
+fleet grows, honest degraded states, and working inside a hard external quota.
+
+> **Data source changed 2026-09-13.** Planned against a self-hosted SkySpy
+> WebSocket API that never had a reachable instance. Now the public OpenSky REST
+> API, verified live. Polled rather than streamed, and it blocks browser origins.
 
 ## Users
 
 | User | Needs |
 | --- | --- |
-| **SkySpy operator** | See what their own receiver is picking up right now, without a terminal |
-| **Aviation enthusiast** near that receiver | Watch local traffic, identify individual aircraft |
-| **The developer** | A real exercise in WebSocket lifecycle, high-frequency state outside React, GPU map rendering |
+| **Aviation enthusiast** | Watch traffic over a chosen region, anywhere OpenSky has coverage |
+| **The developer** | A real exercise in snapshot reconciliation, high-frequency state outside React, and GPU map rendering |
 
-No accounts, no access tiers - a single anonymous view. Not built for global
-coverage, commercial tracking, or anything safety-critical.
+No accounts, no access tiers, a single anonymous view. Not built for global
+simultaneous coverage, commercial tracking, or anything safety-critical. The map
+shows one bounding box at a time, refreshed on an interval.
 
 ## Features
 
@@ -34,117 +39,143 @@ that is the Flightradar24 moment the rest of v1 exists to support.
 
 ### v1 - live map
 
-1. **Project scaffold** - Vite + React + TS, lint, format, Vitest, env config, `verify` script.
-2. **Map shell** - full-viewport dark MapLibre map centred on the configured location.
-3. **Live instance verification** - settle the WebSocket handshake, capture real message fixtures. Gates 4-7.
-4. **Mock WebSocket server** - replay fixtures as a moving feed with fault injection.
-5. **SkySpy WebSocket client** - authenticated connect, subscribe, typed dispatch, backoff reconnect.
-6. **Aircraft store** - pure `Map<hex, Aircraft>` handling all six message types plus staleness.
+1. **Project scaffold** - Vite + React + TS, lint, format, Vitest, env config, `verify` script. **Done.**
+2. **Map shell** - full-viewport dark MapLibre map centred on the configured location. **Done.**
+3. **Backend proxy** - stateless proxy for OpenSky states and tokens, credentials server side, verified from the browser.
+4. **Mock feed server** - replay the committed fixture as a moving feed with fault injection.
+5. **Polling client** - interval loop over the shipped transport, visibility pause, backoff, credit tracking.
+6. **Aircraft store** - pure `Map<hex, Aircraft>` reconciling successive full snapshots, deriving departures and staleness.
 7. **Aircraft layer** - one GeoJSON symbol layer, heading-rotated icons, throttled updates.
 8. **FR24-style visual pass** - altitude colour ramp, zoom sizing, labels, stale fading, legend.
 9. **Selection, detail panel, and trail** - click to select, fleet dims, trail draws, live telemetry.
-10. **Connection status and resilience** - status indicator, REST seed, stats, stale warning, manual reconnect.
+10. **Poll status and resilience** - status indicator, remaining credits, stale warning, manual refresh.
 11. **Documentation and polish** - README, loading and error states, responsive layout, accessibility.
 
 ### v2 - aircraft identity and photos
 
-12. **Airframes API client and cache** - lazy per-selection lookup, miss caching, request dedupe.
-13. **Identity block** - registration, type, operator, country, military badge in the panel.
-14. **Aircraft photo** - photo with mandatory attribution, fixed ratio, fallback, click to enlarge.
-15. **Map enrichment from identity** - per-type silhouettes and military colouring, cache-only.
+12. **Identity API client and cache** - lazy per-selection adsbdb lookup, miss caching, dedupe.
+13. **Identity block** - registration, type, manufacturer, operator, country in the panel.
+14. **Aircraft photo** - planespotters photo via the proxy, mandatory photographer and link attribution.
+15. **Map enrichment from identity** - per-type silhouettes, cache-only.
 
-Each item has a detailed pre-written spec at
-`blueprint/context/features/<nn>-<name>-spec.md`. `/feature <n>` reads the matching file as
-its primary source.
+> **Nine spec files are stale.** Items 3, 4, 5, 6, 10, 12, 13, 14, and 15 still
+> have SkySpy WebSocket specs in `blueprint/context/features/`, and
+> `docs/flight-map-plan.md` is stale throughout. Respec those from this overview
+> rather than reading the old files. Items 7, 8, 9, and 11 are source-agnostic
+> and their specs remain usable.
+
+**Already shipped outside the build plan:** the `opensky-rest-data-source` fix
+delivered `src/api/opensky.ts` (token cache, bounded states query, positional
+vector decoder), the `Aircraft` type, OpenSky config, and a real captured fixture
+at `docs/fixtures/opensky-states-nl.json`. Feature 3 is proxy work, not decoding
+work.
 
 **Explicitly excluded** from both phases: ACARS, safety events, alerts, NOTAMs,
 cannonball mode, audio, airspace overlays, filtering, search, user accounts, and
-whole-fleet trails. Route and origin/destination data is excluded by necessity,
-not choice - no SkySpy endpoint provides it.
+whole-fleet trails. Route and origin/destination data is excluded by necessity -
+no OpenSky endpoint provides it.
 
 ## Data model
 
-**Nothing is persisted.** No database, no backend, no accounts. All state is
-in-memory and session-scoped. The shapes below are still contracts: features
-5-15 depend on them.
+**Nothing is persisted.** No database, no accounts; the proxy is stateless. All
+app state is in-memory and session-scoped. The shapes below are contracts that
+features 5-15 depend on.
 
 ### Aircraft
 
-Keyed by `hex` in `Map<hex, Aircraft>`. **Every field except `hex` is optional**
-- SkySpy's OpenAPI schema declares the aircraft object `additionalProperties:
-{}`, so the real shape is deployment-specific and must be confirmed by capture
-(feature 3), not documentation. Guard every read.
+Keyed by `hex` in `Map<hex, Aircraft>`. **Every field except `hex` and the two
+client-recorded ones is optional.** OpenSky returns each aircraft as a
+**positional array, not an object**, so every index is read by position and
+guarded. Defined in `src/types/aircraft.ts`.
 
-- `hex` (string, **required**) - ICAO 24-bit identifier, the identity key
-- `flight` (string?) - callsign, space-padded on the wire; trim on read
-- `lat` (number?), `lon` (number?) - position; absent before a position fix
-- `alt_baro` (number?) - barometric altitude, ft
-- `gs` (number?) - ground speed, kt
+- `hex` (string, **required**) - ICAO 24-bit identifier, lowercase. The identity key
+- `flight` (string?) - callsign, space-padded on the wire; trimmed on read
+- `lat` (number?), `lon` (number?) - position; absent before a fix. **OpenSky sends lon at index 5 and lat at index 6**
+- `alt_baro` (number?) - barometric altitude, ft, converted from metres
+- `gs` (number?) - ground speed, kt, converted from m/s
 - `track` (number?) - heading, degrees; falls back to 0 for rotation
 - `squawk` (string?) - transponder code
-- `baro_rate` (number?) - vertical speed, ft/min
-- `distance_nm` (number?) - range from receiver
-- `lastSeen` (number) - client-recorded timestamp, **not** from the payload;
-  server timestamps may be absent or skewed
-- `stale` (boolean) - derived: no update for 60 s; dropped at 5 min
+- `baro_rate` (number?) - vertical speed, ft/min, converted from m/s
+- `on_ground` (boolean?)
+- `lastContact` (number?) - when OpenSky last heard the aircraft, epoch seconds
+- `lastSeen` (number) - client-recorded receipt time, ms, **not** from the payload
+- `stale` (boolean) - derived by the store, not the transport
 
 > **Locked:** `hex` is the identity key everywhere. Never key on `flight` -
 > callsigns change and repeat. Aircraft without `lat`/`lon` stay in the store but
 > are excluded from map output.
 
-### WebSocket message envelope
+> `lastContact` is load-bearing. Polling returns vectors already seconds or
+> minutes old, so the client must distinguish when it last polled from when the
+> aircraft was last actually heard. `distance_nm` is dropped: it was a SkySpy
+> receiver-range value with no OpenSky equivalent.
 
-Discriminated union on `type`, built from captured fixtures:
+### Snapshot reconciliation
 
-| Type | Store effect |
+There is no message envelope. Each poll returns the **complete** set of state
+vectors inside the bounding box, so the store diffs successive snapshots:
+
+| Situation | Store effect |
 | --- | --- |
-| `aircraft:snapshot` | Replace entire contents |
-| `aircraft:new` / `aircraft:update` | Upsert wholesale by `hex` |
-| `aircraft:delta` | Shallow-merge present fields only; unknown `hex` is dropped and flags resync |
-| `aircraft:remove` | Delete by `hex`; unknown `hex` is a no-op |
-| `aircraft:heartbeat` | Update liveness clock only |
+| `hex` in new snapshot, not in store | Insert |
+| `hex` in both | Update in place, preserving trail and selection |
+| `hex` in store, absent from snapshot | Not deleted immediately. Marked stale, dropped after a grace period |
+| Empty or `null` `states` | A valid empty box, never an error |
+
+> A single absence is not a departure. Aircraft drop out of one poll and return in
+> the next, so removal is time-based, not presence-based.
 
 ### TrailBuffer
 
-Ring buffer for the **selected aircraft only**, held separately from the aircraft
-store so it costs nothing when nothing is selected.
+Ring buffer for the **selected aircraft only**, held separately from the store so
+it costs nothing when nothing is selected.
 
 - `hex` (string) - the aircraft it belongs to
 - `points` (array of `{lat, lon}`, cap ~200) - oldest discarded past the cap
-- cleared on deselect and on selection change - never merged between aircraft
+- cleared on deselect and on selection change, never merged between aircraft
 
-> Client-side only. SkySpy provides no position history, so a trail starts empty
-> at selection. It is not flight history and must not be presented as such.
+> Client-side only, and at a 30 s poll interval a trail is a coarse dotted track,
+> not a smooth path. It is not flight history and must not be presented as such.
 
-### AirframeInfo (v2)
+### AircraftIdentity (v2)
 
-From `GET /api/v1/airframes/{icao_hex}/`. All fields optional except `icao_hex`.
+From adsbdb `GET https://api.adsbdb.com/v0/aircraft/{hex}`, browser-callable
+(`Access-Control-Allow-Origin: *`). All fields optional except `hex`.
 
-- Identity: `icao_hex`, `registration`, `type_code`, `type_name`
-- Airframe: `manufacturer`, `model`, `serial_number`, `year_built`, `age_years`,
-  `first_flight_date`, `delivery_date`, `airframe_hours`
-- Operator: `operator`, `operator_icao`, `operator_callsign`, `owner`, `country`,
-  `country_code`
-- Classification: `category`, `is_military` (absent means **unknown**, not civil)
-- Media: `photo_url`, `photo_thumbnail_url`, `photo_photographer`, `photo_source`
-- Provenance: `cached_at`, `fetch_failed`
+- Identity: `registration`, `icao_type`, `type`, `manufacturer`
+- Operator: `registered_owner`, `registered_owner_operator_flag_code`,
+  `registered_owner_country_name`, `registered_owner_country_iso_name`
 
-### AirframeCache (v2)
+> **No `is_military`, serial number, or build year from any available source.**
+> The military badge (13) and military colouring (15) are dropped, not deferred.
+
+### AircraftPhoto (v2)
+
+From planespotters `GET https://api.planespotters.net/pub/photos/hex/{hex}`.
+
+- `thumbnail`, `thumbnail_large` - `{src, size:{width,height}}`
+- `link` - the planespotters page
+- `photographer` - **mandatory attribution, rendered every time**
+
+> Requires a descriptive `User-Agent` with a contact URL. Browsers forbid setting
+> that header, so **this call must go through the feature 3 proxy.**
+
+### IdentityCache (v2)
 
 `Map<hex, CacheEntry>` where an entry is `pending`, `loaded`, or `missing`.
 
 > **Locked:** misses are cached too - reselecting an aircraft with no record must
-> not refetch a known 404. `fetch_failed: true` is transient, cached as
-> retryable rather than a permanent miss. Lookups are lazy and per-selection;
-> the map layer reads the cache but **never triggers a fetch**.
+> not refetch a known 404. Lookups are lazy and per-selection; the map layer reads
+> the cache but **never triggers a fetch**.
 
-### ConnectionStatus
+### PollStatus
 
-`connecting` | `connected` | `reconnecting` | `auth-failed` | `closed`.
+`idle` | `polling` | `ok` | `stale` | `budget-exhausted` | `auth-failed` | `unreachable`.
 
-> Three failure modes must stay visually distinguishable: disconnected (retrying),
-> connected-but-silent (socket up, no frames), and auth-failed (token rejected,
-> **not** retrying).
+> Four failure modes must stay visually distinguishable: proxy unreachable
+> (retrying), data old (OpenSky answered with stale vectors), budget exhausted
+> (**not an error, and retrying will not help until the daily reset**), and
+> credentials rejected (**not** retrying).
 
 ## Tech stack
 
@@ -153,31 +184,44 @@ From `GET /api/v1/airframes/{icao_hex}/`. All fields optional except `icao_hex`.
   over Leaflet deliberately: Leaflet renders each marker as a DOM node and
   stutters at a few thousand aircraft; MapLibre draws them in one WebGL symbol
   layer.
-- **Native WebSocket, hand-rolled client** - SkySpy's subprotocol auth and
-  subscribe protocol are the whole job; a library would be wrapped anyway
-- **Vitest + React Testing Library** - unit and component tests
-- **ESLint + Prettier** - lint and format
-- **No backend** - the app talks to SkySpy directly
+- **Hand-rolled REST transport** - positional vector decoding, OAuth2 client
+  credentials with an early-refresh token cache, and a discriminated
+  `found`/`missing`/`error` result that never throws into render
+- **A minimal backend proxy** - Node, deployable as a serverless function.
+  **Required, not optional.**
+- **Vitest + React Testing Library**, ESLint + Prettier
 
-### External API
+### External APIs
 
-Self-hosted SkySpy. REST at `{HTTP_BASE}/api/v1/`, WebSocket at
-`{WS_BASE}/ws/aircraft/`.
+**OpenSky Network.** REST at `https://opensky-network.org/api`, OAuth2 tokens
+from the public Keycloak realm at
+`https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token`.
 
-> **Auth is settled: the token travels via the `Sec-WebSocket-Protocol` header**,
-> reachable from the browser as the `WebSocket` constructor's second argument.
-> **No query-string fallback, not even in development** - query strings leak
-> tokens into server logs. The exact protocol array shape is confirmed in
-> feature 3 and isolated in `buildProtocols()`.
+Verified live 2026-09-13:
 
-Documented rate limits: aircraft updates 10 Hz, deltas 10 Hz, stats 0.5 Hz;
-server batches over a 200 ms window. Reconnect backoff follows SkySpy's
-documented expectation: 1000 ms start, 30000 ms max, x2, 0-30% jitter.
+| Fact | Value |
+| --- | --- |
+| Token lifetime | 1800 s |
+| Bounded `states/all` query | 1 credit |
+| Authenticated budget | 4000 credits per day |
+| Anonymous budget | 400 credits per day per IP |
+| Minimum safe poll interval | 30 s (about 2880 credits per day) |
+
+> **The browser cannot call OpenSky directly.** It returns
+> `Access-Control-Allow-Origin: https://opensky-network.org` to every origin,
+> confirmed with a real preflight, and the token endpoint sends no CORS header at
+> all. The proxy is mandatory for the app to function, not merely to hide
+> credentials. It also keeps the client secret out of the bundle.
+
+**adsbdb** (v2 identity) and **planespotters** (v2 photos). Both send
+`Access-Control-Allow-Origin: *`; planespotters additionally requires a
+descriptive `User-Agent`, so it goes through the proxy.
 
 ## Monetization
 
 Not in v1, and not planned. Personal study project - no ads, no accounts, no
-commercial intent.
+commercial intent. The daily credit budget is the real constraint, and the proxy
+is the natural place to enforce it.
 
 ## UI/UX
 
@@ -197,58 +241,53 @@ map tiles. Own assets and palette throughout.
 - Detail panel - left sidebar; bottom sheet below ~640 px. Layout reserves an
   identity slot above telemetry for features 13-14, so adding them causes no
   reflow
-- Connection status + stats bar - persistent, unobtrusive
+- Poll status + stats bar - persistent, unobtrusive, shows remaining credits
 - Altitude legend - compact, non-blocking
 
 Honest about limits: a frozen map that looks healthy is worse than one admitting
 it is stale. Aircraft that stop reporting fade rather than sitting at full
 brightness; missing values render as dashes, never zeros; a sparse map is normal
-because one receiver sees one radius.
+because the view is one bounding box and OpenSky coverage varies by region.
 
 ## Deployment
 
-> **TODO - no deployment target chosen.** Local development only; `/release` has
-> not been run.
+> **No target chosen.** `/release` has not been run. Deployment is now possible in
+> principle, which it was not under the direct-to-API design.
 
-The app is a static SPA (`vite build` → `dist/`), so any static host would serve
-it. Two blockers before it ships anywhere public:
+A static SPA (`vite build` → `dist/`) plus one proxy endpoint, so a host serving
+static files alongside a serverless function fits naturally.
 
-1. **Token exposure.** Every `VITE_`-prefixed variable is baked into the client
-   bundle and readable by anyone using the app. A public deployment needs a
-   backend proxy holding the token server-side.
-2. **CORS and mixed content.** An HTTPS page cannot open a `ws://` socket, and
-   browser REST calls need CORS on the SkySpy host. Development uses Vite's dev
-   proxy, which must be confirmed to forward `Sec-WebSocket-Protocol` intact -
-   proxies that strip it break auth in development only.
+1. **The proxy is required in every environment**, including local development.
+   Vite's dev proxy covers development; production needs the real thing.
+2. **Credentials live only on the proxy.** Every `VITE_` variable is readable in
+   the client bundle, so nothing sensitive belongs there.
+3. **The credit budget is per account, not per user.** A public deployment shares
+   one 4000 per day budget across everyone who loads it, making the poll interval
+   and any caching deployment decisions, not just client ones.
 
-Env vars by name: `VITE_SKYSPY_HTTP`, `VITE_SKYSPY_WS`, `VITE_SKYSPY_TOKEN`,
-`VITE_MAP_STYLE_URL`, `VITE_DEFAULT_CENTER`, `VITE_DEFAULT_ZOOM`.
+Client env vars by name: `VITE_OPENSKY_API_BASE`, `VITE_OPENSKY_AUTH_URL`,
+`VITE_OPENSKY_POLL_MS`, `VITE_MAP_STYLE_URL`, `VITE_DEFAULT_CENTER`,
+`VITE_DEFAULT_ZOOM`. Server-side only: the OpenSky client ID and secret.
 
-No database, workers, or cron. No health path - it is a static bundle.
+No database, workers, or cron. Health check applies to the proxy only.
 
 ## Open questions
 
 > Resolve these in the plans, then re-run `/overview`.
 
-1. **Is there a reachable SkySpy instance?** Feature 3 needs one to capture
-   fixtures and confirm the handshake, and features 4-7 are built against what it
-   captures. Neither plan names a host. If there is none, feature 3 stops rather
-   than inventing fixtures.
-2. **Which auth mode - API key, JWT login, or public mode?** The transport is
-   settled; the credential type is not. An API key avoids mid-session JWT expiry
-   silently killing the socket.
-3. **`VITE_DEFAULT_CENTER` has no value.** Presumably the receiver location, but
-   no plan states it.
-4. **`AGENTS.md` Commands are stale.** They still list the Next.js defaults
-   (`npm run dev` on port 3000, `npm run start`) which contradict this Vite
-   project. Feature 1 updates them; until then they are wrong.
-5. **Testing is declared in the stack but the gate is off.** `project-plan.md` §5
-   names Vitest, and feature 1 installs it directly, while `AGENTS.md` says
-   testing is opt-in via `/tests`. Feature 1 as specified resolves this by
-   installing the runner and adding `verify`; run `/tests` afterwards if the
-   formal gate should be on.
-6. **Feature numbering deviates from convention.** `build-plan.md` numbers the
-   scaffold as feature 1, though the Blueprint treats scaffolding as a pre-build
-   step. This keeps build-plan IDs aligned one-to-one with the already-written
-   spec files. Renumbering later would break archived spec references, so change
-   it now or not at all.
+1. **Where does the proxy run?** Feature 3 needs a target to build against.
+   Vercel functions, a small Node server, and Cloudflare Workers all fit, but no
+   plan names one. This also decides whether `/release` targets Vercel or Render.
+2. **Which bounding box, and does it follow the map?** `VITE_DEFAULT_CENTER` is
+   set to Amsterdam, but no plan says whether the polled box is fixed or tracks
+   the viewport. Tracking the viewport means a new box on every pan, which
+   interacts directly with the credit budget.
+3. **How long before an absent aircraft is dropped?** Snapshot reconciliation
+   needs a grace period. The old 60 s stale / 5 min drop came from a 10 Hz stream
+   and is unlikely to be right at a 30 s poll.
+4. **Nine stale spec files and `docs/flight-map-plan.md`.** Listed above. They
+   describe a WebSocket architecture that no longer exists and will mislead
+   `/feature` until rewritten.
+5. **Six open findings in the ledger.** F-01 and F-02 from the OpenSky fix are
+   P2 and both partly dissolve once the proxy exists, since credentials move
+   server side. Worth re-auditing after feature 3 rather than fixing twice.

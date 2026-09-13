@@ -1,22 +1,22 @@
 /**
- * OpenSky Network REST transport.
+ * OpenSky snapshot client, talking to this app's own proxy.
  *
  * Transport only: it fetches, decodes, and classifies failures. It holds no
  * domain state, derives no staleness, and never touches the map.
  *
- * Endpoints and quotas confirmed against the live API on 2026-09-13: a bounded
- * `states/all` query costs one credit, anonymous callers get 400 a day per IP,
- * and an authenticated token lives 1800 s.
+ * The browser cannot call OpenSky directly. `states/all` answers every origin
+ * with `Access-Control-Allow-Origin: https://opensky-network.org` and the token
+ * endpoint sends no CORS header at all, so everything goes through
+ * `/api/opensky`. Credentials and the OAuth2 exchange live there, in
+ * `src/server/`, and nothing in this module knows a secret exists.
  */
 
 import type { Aircraft } from '../types/aircraft'
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
-export interface OpenSkyCredentials {
-  clientId: string
-  clientSecret: string
-}
+/** Same-origin path of the proxy this client speaks to. */
+export const DEFAULT_PROXY_BASE = '/api/opensky'
 
 export interface BoundingBox {
   lamin: number
@@ -34,19 +34,12 @@ export interface StatesSnapshot {
 }
 
 export type OpenSkyErrorReason =
-  | 'auth'
-  | 'rate-limited'
-  | 'network'
-  | 'server'
-  | 'malformed'
+  'auth' | 'rate-limited' | 'network' | 'server' | 'malformed'
 
 export type OpenSkyResult<T> =
   | { status: 'found'; data: T }
   | { status: 'missing' }
   | { status: 'error'; reason: OpenSkyErrorReason }
-
-/** Refreshed this long before expiry so a poll never races the boundary. */
-const TOKEN_REFRESH_MARGIN_MS = 60_000
 
 /** Positions in an OpenSky state vector, which is an array and not an object. */
 const ICAO24 = 0
@@ -110,104 +103,54 @@ export function decodeStateVector(
   }
 }
 
-function reasonForStatus(status: number): OpenSkyErrorReason {
-  if (status === 401 || status === 403) return 'auth'
-  if (status === 429) return 'rate-limited'
-  if (status >= 500) return 'server'
-  return 'malformed'
+/**
+ * The proxy's error codes, which are a stable contract. Anything unrecognised
+ * is `malformed` rather than a guess, so a new code cannot silently read as a
+ * retryable failure.
+ */
+const REASON_BY_PROXY_CODE: Record<string, OpenSkyErrorReason> = {
+  'credentials-rejected': 'auth',
+  'rate-limited': 'rate-limited',
+  'upstream-unavailable': 'network',
 }
 
-interface CachedToken {
-  value: string
-  expiresAtMs: number
+async function reasonForFailure(
+  response: Response,
+): Promise<OpenSkyErrorReason> {
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    return 'malformed'
+  }
+
+  if (typeof payload !== 'object' || payload === null) return 'malformed'
+
+  const code = (payload as Record<string, unknown>).error
+  if (typeof code !== 'string') return 'malformed'
+
+  return REASON_BY_PROXY_CODE[code] ?? 'malformed'
 }
 
 export interface OpenSkyClientOptions {
-  apiBase: string
-  authUrl: string
-  /** Absent means anonymous access, which OpenSky serves at a lower quota. */
-  credentials?: OpenSkyCredentials
   fetch: FetchLike
   now?: () => number
+  /** Override only for tests; the proxy is always same-origin in the app. */
+  proxyBase?: string
 }
 
 export interface OpenSkyClient {
   fetchStates(box: BoundingBox): Promise<OpenSkyResult<StatesSnapshot>>
-  /** True once credentials have produced a token, for status reporting. */
-  isAuthenticated(): boolean
 }
 
 export function createOpenSkyClient({
-  apiBase,
-  authUrl,
-  credentials,
   fetch: fetchImpl,
   now = Date.now,
+  proxyBase = DEFAULT_PROXY_BASE,
 }: OpenSkyClientOptions): OpenSkyClient {
-  let cached: CachedToken | undefined
-  let inFlight: Promise<CachedToken | undefined> | undefined
-
-  async function requestToken(): Promise<CachedToken | undefined> {
-    if (!credentials) return undefined
-
-    const body = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: credentials.clientId,
-      client_secret: credentials.clientSecret,
-    })
-
-    const response = await fetchImpl(authUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    })
-
-    if (!response.ok) {
-      throw new Error(`token request failed with status ${response.status}`)
-    }
-
-    const payload: unknown = await response.json()
-    if (typeof payload !== 'object' || payload === null) {
-      throw new Error('token response was not an object')
-    }
-
-    const record = payload as Record<string, unknown>
-    const accessToken = optionalText(record.access_token)
-    if (accessToken === undefined) {
-      throw new Error('token response carried no access_token')
-    }
-
-    const lifetimeSeconds = optionalNumber(record.expires_in) ?? 0
-
-    return {
-      value: accessToken,
-      expiresAtMs: now() + lifetimeSeconds * 1000 - TOKEN_REFRESH_MARGIN_MS,
-    }
-  }
-
-  async function getToken(): Promise<string | undefined> {
-    if (!credentials) return undefined
-    if (cached && now() < cached.expiresAtMs) return cached.value
-
-    // Concurrent polls must not each spend a token request.
-    inFlight ??= requestToken().finally(() => {
-      inFlight = undefined
-    })
-
-    cached = await inFlight
-    return cached?.value
-  }
-
   async function fetchStates(
     box: BoundingBox,
   ): Promise<OpenSkyResult<StatesSnapshot>> {
-    let token: string | undefined
-    try {
-      token = await getToken()
-    } catch {
-      return { status: 'error', reason: 'auth' }
-    }
-
     const query = new URLSearchParams({
       lamin: String(box.lamin),
       lomin: String(box.lomin),
@@ -217,19 +160,15 @@ export function createOpenSkyClient({
 
     let response: Response
     try {
-      response = await fetchImpl(`${apiBase}/states/all?${query.toString()}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      })
+      response = await fetchImpl(`${proxyBase}/states?${query.toString()}`)
     } catch {
+      // The proxy itself is unreachable, which is the same story to the user as
+      // an unreachable upstream: retrying is worth it.
       return { status: 'error', reason: 'network' }
     }
 
-    if (response.status === 404) return { status: 'missing' }
-
     if (!response.ok) {
-      // A rejected token is worth discarding so the next poll requests a fresh one.
-      if (response.status === 401 || response.status === 403) cached = undefined
-      return { status: 'error', reason: reasonForStatus(response.status) }
+      return { status: 'error', reason: await reasonForFailure(response) }
     }
 
     let payload: unknown
@@ -271,8 +210,5 @@ export function createOpenSkyClient({
     }
   }
 
-  return {
-    fetchStates,
-    isAuthenticated: () => cached !== undefined,
-  }
+  return { fetchStates }
 }

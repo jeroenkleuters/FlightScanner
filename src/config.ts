@@ -6,9 +6,8 @@
  *
  * Errors name the offending variable and never include its value. Every `VITE_`
  * variable is baked into the client bundle and readable by anyone who loads the
- * app, so `VITE_OPENSKY_CLIENT_SECRET` is only safe for local and
- * trusted-network use. A public deployment needs a backend proxy that holds the
- * credentials instead.
+ * app, so nothing sensitive belongs here. The OpenSky credentials and upstream
+ * URLs live on the proxy instead, read by `src/server/env.ts`.
  */
 
 import { DEFAULT_MAP_STYLE_URL } from './map/mapStyle'
@@ -16,10 +15,6 @@ import { DEFAULT_MAP_STYLE_URL } from './map/mapStyle'
 // Re-exported so callers keep one import for configuration values. The constant
 // itself lives with the map, next to the provider and attribution record.
 export { DEFAULT_MAP_STYLE_URL }
-
-export const DEFAULT_OPENSKY_API_BASE = 'https://opensky-network.org/api'
-export const DEFAULT_OPENSKY_AUTH_URL =
-  'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token'
 
 /**
  * OpenSky bills a bounded states query at one credit and grants 4000 a day to
@@ -39,14 +34,6 @@ export interface LatLon {
 }
 
 export interface AppConfig {
-  /** OpenSky REST base, no trailing slash. */
-  openSkyApiBase: string
-  /** OpenSky OAuth2 token endpoint. */
-  openSkyAuthUrl: string
-  /** Absent means anonymous access, which OpenSky allows at a lower quota. */
-  openSkyClientId: string | undefined
-  /** Present only when `openSkyClientId` is. */
-  openSkyClientSecret: string | undefined
   pollIntervalMs: number
   mapStyleUrl: string
   defaultCenter: LatLon
@@ -153,48 +140,7 @@ function parsePollInterval(key: string, value: string): number {
   return interval
 }
 
-/**
- * Credentials are optional, but half a pair is always a mistake: it would
- * silently fall back to anonymous access at a tenth of the quota.
- */
-function parseCredentials(env: RawEnv): {
-  openSkyClientId: string | undefined
-  openSkyClientSecret: string | undefined
-} {
-  const openSkyClientId = optionalString(env, 'VITE_OPENSKY_CLIENT_ID')
-  const openSkyClientSecret = optionalString(env, 'VITE_OPENSKY_CLIENT_SECRET')
-
-  if (openSkyClientId !== undefined && openSkyClientSecret === undefined) {
-    throw new ConfigError(
-      'VITE_OPENSKY_CLIENT_SECRET',
-      'is required when VITE_OPENSKY_CLIENT_ID is set',
-    )
-  }
-  if (openSkyClientSecret !== undefined && openSkyClientId === undefined) {
-    throw new ConfigError(
-      'VITE_OPENSKY_CLIENT_ID',
-      'is required when VITE_OPENSKY_CLIENT_SECRET is set',
-    )
-  }
-
-  return { openSkyClientId, openSkyClientSecret }
-}
-
 export function parseConfig(env: RawEnv): AppConfig {
-  const openSkyApiBase = parseUrlWithDefault(
-    env,
-    'VITE_OPENSKY_API_BASE',
-    DEFAULT_OPENSKY_API_BASE,
-    ['http:', 'https:'],
-  )
-
-  const openSkyAuthUrl = parseUrlWithDefault(
-    env,
-    'VITE_OPENSKY_AUTH_URL',
-    DEFAULT_OPENSKY_AUTH_URL,
-    ['http:', 'https:'],
-  )
-
   const rawPoll = optionalString(env, 'VITE_OPENSKY_POLL_MS')
   const pollIntervalMs =
     rawPoll === undefined
@@ -221,9 +167,6 @@ export function parseConfig(env: RawEnv): AppConfig {
       : parseZoom('VITE_DEFAULT_ZOOM', rawZoom)
 
   return {
-    openSkyApiBase,
-    openSkyAuthUrl,
-    ...parseCredentials(env),
     pollIntervalMs,
     mapStyleUrl,
     defaultCenter,
