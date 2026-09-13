@@ -33,7 +33,7 @@ specs refer to those IDs.
 - [x] 4. **Mock feed server** - replay `docs/fixtures/opensky-states-nl.json` as a moving feed with fault injection, so 5-7 can be built without spending credits
 - [x] 5. **Polling client** - interval loop over the shipped transport against the one fixed bounding box, visibility pause, backoff on failure, credit budget tracking
 - [x] 6. **Aircraft store** - pure Map<hex, Aircraft> reconciling successive full snapshots, deriving staleness from `lastContact` and dropping an aircraft 30 s after the last snapshot that held it
-- [ ] 7. **Aircraft layer** - one GeoJSON symbol layer, heading-rotated icons, throttled updates → `blueprint/context/features/07-aircraft-layer-spec.md`
+- [x] 7. **Aircraft layer** - one GeoJSON symbol layer, heading-rotated icons, throttled updates → `blueprint/context/features/07-aircraft-layer-spec.md`
 - [ ] 8. **FR24-style visual pass** - altitude colour ramp, zoom sizing, labels, stale fading, legend → `blueprint/context/features/08-visual-pass-spec.md`
 - [ ] 9. **Selection, detail panel, and trail** - click to select, fleet dims, trail draws, live telemetry → `blueprint/context/features/09-selection-detail-trail-spec.md`
 - [ ] 10. **Poll status and resilience** - status indicator, remaining credits, stale snapshot warning, manual refresh, an "outside the covered box" state, and the four failure modes in project plan §7

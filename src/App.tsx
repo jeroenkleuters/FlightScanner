@@ -1,5 +1,6 @@
 import { usePolling } from './api/usePolling'
 import type { PollStatus } from './api/pollSchedule'
+import { AircraftLayer } from './map/AircraftLayer'
 import { FlightMap } from './map/FlightMap'
 import { useAircraftStore } from './store/useAircraftStore'
 
@@ -25,7 +26,9 @@ function App() {
 
   return (
     <div className="app-shell">
-      <FlightMap />
+      <FlightMap>
+        <AircraftLayer store={store} />
+      </FlightMap>
       {/* Provisional. Feature 10 replaces this with the real status bar. */}
       <p className="poll-readout" aria-live="polite">
         <span>{STATUS_TEXT[status]}</span>
