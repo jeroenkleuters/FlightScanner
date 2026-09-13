@@ -28,7 +28,7 @@ specs refer to those IDs.
 
 - [x] 1. **Project scaffold** - Vite + React + TS, lint, format, Vitest, env config, verify script → `blueprint/context/features/01-scaffold-spec.md`
 - [x] 2. **Map shell** - full-viewport dark MapLibre map centred on the configured location → `blueprint/context/features/02-map-shell-spec.md`
-- [ ] 3. **Backend proxy** - minimal stateless proxy for OpenSky states and tokens, credentials held server side, verified from the browser. SPEC STALE, replaces the old SkySpy handshake verification
+- [x] 3. **Backend proxy** - minimal stateless proxy for OpenSky states and tokens, credentials held server side, verified from the browser. SPEC STALE, replaces the old SkySpy handshake verification
 - [ ] 4. **Mock feed server** - replay `docs/fixtures/opensky-states-nl.json` as a moving feed with fault injection. SPEC STALE
 - [ ] 5. **Polling client** - interval loop over the shipped transport, visibility pause, backoff on failure, credit budget tracking. SPEC STALE
 - [ ] 6. **Aircraft store** - pure Map<hex, Aircraft> reconciling successive full snapshots, deriving departures and staleness. SPEC STALE, the six message types no longer exist
