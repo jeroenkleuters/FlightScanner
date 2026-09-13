@@ -31,7 +31,7 @@ specs refer to those IDs.
 - [x] 2. **Map shell** - full-viewport dark MapLibre map centred on the configured location → `blueprint/context/features/02-map-shell-spec.md`
 - [x] 3. **Backend proxy** - minimal stateless proxy for OpenSky states and tokens, credentials held server side, verified from the browser. Shipped; see `blueprint/history/features/03-backend-proxy.md`
 - [x] 4. **Mock feed server** - replay `docs/fixtures/opensky-states-nl.json` as a moving feed with fault injection, so 5-7 can be built without spending credits
-- [ ] 5. **Polling client** - interval loop over the shipped transport against the one fixed bounding box, visibility pause, backoff on failure, credit budget tracking
+- [x] 5. **Polling client** - interval loop over the shipped transport against the one fixed bounding box, visibility pause, backoff on failure, credit budget tracking
 - [ ] 6. **Aircraft store** - pure Map<hex, Aircraft> reconciling successive full snapshots, deriving staleness from `lastContact` and dropping an aircraft 30 s after the last snapshot that held it
 - [ ] 7. **Aircraft layer** - one GeoJSON symbol layer, heading-rotated icons, throttled updates → `blueprint/context/features/07-aircraft-layer-spec.md`
 - [ ] 8. **FR24-style visual pass** - altitude colour ramp, zoom sizing, labels, stale fading, legend → `blueprint/context/features/08-visual-pass-spec.md`

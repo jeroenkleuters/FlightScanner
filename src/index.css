@@ -31,6 +31,21 @@ body {
   height: 100%;
 }
 
+/* Provisional readout for the polling loop. Feature 10 replaces it. */
+.poll-readout {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: rgba(16, 20, 26, 0.8);
+  color: #cfd6df;
+  pointer-events: none;
+}
+
 .map-error {
   display: flex;
   align-items: center;

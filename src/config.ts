@@ -10,6 +10,7 @@
  * URLs live on the proxy instead, read by `src/server/env.ts`.
  */
 
+import type { BoundingBox } from './api/opensky'
 import { DEFAULT_MAP_STYLE_URL } from './map/mapStyle'
 
 // Re-exported so callers keep one import for configuration values. The constant
@@ -28,6 +29,19 @@ export const DEFAULT_POLL_INTERVAL_MS = 30_000
 export const DEFAULT_CENTER = { lat: 0, lon: 0 } as const
 export const DEFAULT_ZOOM = 6
 
+/**
+ * Roughly the Netherlands with the Belgian and German border regions, matching
+ * the default centre and the committed fixture. The box is fixed for the
+ * session: the camera never changes it, so a shared deployment spends one
+ * credit per interval in total rather than one per viewer per pan.
+ */
+export const DEFAULT_BOUNDING_BOX: BoundingBox = {
+  lamin: 50.5,
+  lomin: 3.0,
+  lamax: 53.8,
+  lomax: 7.3,
+}
+
 export interface LatLon {
   lat: number
   lon: number
@@ -35,6 +49,7 @@ export interface LatLon {
 
 export interface AppConfig {
   pollIntervalMs: number
+  boundingBox: BoundingBox
   mapStyleUrl: string
   defaultCenter: LatLon
   defaultZoom: number
@@ -126,6 +141,39 @@ function parseZoom(key: string, value: string): number {
   return zoom
 }
 
+/** `lamin,lomin,lamax,lomax`, the order the proxy and transport already use. */
+function parseBoundingBox(key: string, value: string): BoundingBox {
+  const parts = value.split(',')
+  if (parts.length !== 4) {
+    throw new ConfigError(
+      key,
+      'must be four comma separated numbers, "lamin,lomin,lamax,lomax"',
+    )
+  }
+
+  const [lamin, lomin, lamax, lomax] = parts.map((part) =>
+    part.trim() === '' ? Number.NaN : Number(part.trim()),
+  )
+
+  if (![lamin, lomin, lamax, lomax].every(Number.isFinite)) {
+    throw new ConfigError(key, 'has a corner that is not a number')
+  }
+  if (lamin < -90 || lamin > 90 || lamax < -90 || lamax > 90) {
+    throw new ConfigError(key, 'has a latitude outside -90..90')
+  }
+  if (lomin < -180 || lomin > 180 || lomax < -180 || lomax > 180) {
+    throw new ConfigError(key, 'has a longitude outside -180..180')
+  }
+  if (lamin > lamax) {
+    throw new ConfigError(key, 'has a southern edge north of its northern edge')
+  }
+  if (lomin > lomax) {
+    throw new ConfigError(key, 'has a western edge east of its eastern edge')
+  }
+
+  return { lamin, lomin, lamax, lomax }
+}
+
 function parsePollInterval(key: string, value: string): number {
   const interval = Number(value)
   if (!Number.isFinite(interval)) {
@@ -146,6 +194,12 @@ export function parseConfig(env: RawEnv): AppConfig {
     rawPoll === undefined
       ? DEFAULT_POLL_INTERVAL_MS
       : parsePollInterval('VITE_OPENSKY_POLL_MS', rawPoll)
+
+  const rawBox = optionalString(env, 'VITE_OPENSKY_BBOX')
+  const boundingBox =
+    rawBox === undefined
+      ? { ...DEFAULT_BOUNDING_BOX }
+      : parseBoundingBox('VITE_OPENSKY_BBOX', rawBox)
 
   const mapStyleUrl = parseUrlWithDefault(
     env,
@@ -168,6 +222,7 @@ export function parseConfig(env: RawEnv): AppConfig {
 
   return {
     pollIntervalMs,
+    boundingBox,
     mapStyleUrl,
     defaultCenter,
     defaultZoom,
