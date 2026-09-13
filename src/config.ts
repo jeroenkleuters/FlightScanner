@@ -6,8 +6,9 @@
  *
  * Errors name the offending variable and never include its value. Every `VITE_`
  * variable is baked into the client bundle and readable by anyone who loads the
- * app, so `VITE_SKYSPY_TOKEN` is only safe for local and trusted-network use. A
- * public deployment needs a backend proxy that holds the token instead.
+ * app, so `VITE_OPENSKY_CLIENT_SECRET` is only safe for local and
+ * trusted-network use. A public deployment needs a backend proxy that holds the
+ * credentials instead.
  */
 
 import { DEFAULT_MAP_STYLE_URL } from './map/mapStyle'
@@ -15,6 +16,19 @@ import { DEFAULT_MAP_STYLE_URL } from './map/mapStyle'
 // Re-exported so callers keep one import for configuration values. The constant
 // itself lives with the map, next to the provider and attribution record.
 export { DEFAULT_MAP_STYLE_URL }
+
+export const DEFAULT_OPENSKY_API_BASE = 'https://opensky-network.org/api'
+export const DEFAULT_OPENSKY_AUTH_URL =
+  'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token'
+
+/**
+ * OpenSky bills a bounded states query at one credit and grants 4000 a day to
+ * an authenticated client, so 30 s costs about 2880 and fits. Anything faster
+ * exhausts the quota partway through the day, which is why this is a hard floor
+ * rather than a default.
+ */
+export const MIN_POLL_INTERVAL_MS = 30_000
+export const DEFAULT_POLL_INTERVAL_MS = 30_000
 
 export const DEFAULT_CENTER = { lat: 0, lon: 0 } as const
 export const DEFAULT_ZOOM = 6
@@ -25,12 +39,15 @@ export interface LatLon {
 }
 
 export interface AppConfig {
-  /** SkySpy REST base, no trailing slash. */
-  skySpyHttp: string
-  /** SkySpy WebSocket base, no trailing slash. */
-  skySpyWs: string
-  /** Absent means SkySpy public mode. */
-  skySpyToken: string | undefined
+  /** OpenSky REST base, no trailing slash. */
+  openSkyApiBase: string
+  /** OpenSky OAuth2 token endpoint. */
+  openSkyAuthUrl: string
+  /** Absent means anonymous access, which OpenSky allows at a lower quota. */
+  openSkyClientId: string | undefined
+  /** Present only when `openSkyClientId` is. */
+  openSkyClientSecret: string | undefined
+  pollIntervalMs: number
   mapStyleUrl: string
   defaultCenter: LatLon
   defaultZoom: number
@@ -55,14 +72,6 @@ function optionalString(env: RawEnv, key: string): string | undefined {
   return trimmed === '' ? undefined : trimmed
 }
 
-function requiredString(env: RawEnv, key: string): string {
-  const value = optionalString(env, key)
-  if (value === undefined) {
-    throw new ConfigError(key, 'is required but was not set')
-  }
-  return value
-}
-
 function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, '')
 }
@@ -81,6 +90,17 @@ function parseUrl(key: string, value: string, protocols: string[]): string {
   }
 
   return trimTrailingSlashes(value.trim())
+}
+
+/** Applies the default when absent, and validates whatever is supplied. */
+function parseUrlWithDefault(
+  env: RawEnv,
+  key: string,
+  fallback: string,
+  protocols: string[],
+): string {
+  const raw = optionalString(env, key)
+  return raw === undefined ? fallback : parseUrl(key, raw, protocols)
 }
 
 function parseCenter(key: string, value: string): LatLon {
@@ -119,24 +139,74 @@ function parseZoom(key: string, value: string): number {
   return zoom
 }
 
+function parsePollInterval(key: string, value: string): number {
+  const interval = Number(value)
+  if (!Number.isFinite(interval)) {
+    throw new ConfigError(key, 'must be a number of milliseconds')
+  }
+  if (interval < MIN_POLL_INTERVAL_MS) {
+    throw new ConfigError(
+      key,
+      `must be at least ${MIN_POLL_INTERVAL_MS} ms to stay inside the OpenSky daily credit budget`,
+    )
+  }
+  return interval
+}
+
+/**
+ * Credentials are optional, but half a pair is always a mistake: it would
+ * silently fall back to anonymous access at a tenth of the quota.
+ */
+function parseCredentials(env: RawEnv): {
+  openSkyClientId: string | undefined
+  openSkyClientSecret: string | undefined
+} {
+  const openSkyClientId = optionalString(env, 'VITE_OPENSKY_CLIENT_ID')
+  const openSkyClientSecret = optionalString(env, 'VITE_OPENSKY_CLIENT_SECRET')
+
+  if (openSkyClientId !== undefined && openSkyClientSecret === undefined) {
+    throw new ConfigError(
+      'VITE_OPENSKY_CLIENT_SECRET',
+      'is required when VITE_OPENSKY_CLIENT_ID is set',
+    )
+  }
+  if (openSkyClientSecret !== undefined && openSkyClientId === undefined) {
+    throw new ConfigError(
+      'VITE_OPENSKY_CLIENT_ID',
+      'is required when VITE_OPENSKY_CLIENT_SECRET is set',
+    )
+  }
+
+  return { openSkyClientId, openSkyClientSecret }
+}
+
 export function parseConfig(env: RawEnv): AppConfig {
-  const skySpyHttp = parseUrl(
-    'VITE_SKYSPY_HTTP',
-    requiredString(env, 'VITE_SKYSPY_HTTP'),
+  const openSkyApiBase = parseUrlWithDefault(
+    env,
+    'VITE_OPENSKY_API_BASE',
+    DEFAULT_OPENSKY_API_BASE,
     ['http:', 'https:'],
   )
 
-  const skySpyWs = parseUrl(
-    'VITE_SKYSPY_WS',
-    requiredString(env, 'VITE_SKYSPY_WS'),
-    ['ws:', 'wss:'],
+  const openSkyAuthUrl = parseUrlWithDefault(
+    env,
+    'VITE_OPENSKY_AUTH_URL',
+    DEFAULT_OPENSKY_AUTH_URL,
+    ['http:', 'https:'],
   )
 
-  const rawMapStyle = optionalString(env, 'VITE_MAP_STYLE_URL')
-  const mapStyleUrl =
-    rawMapStyle === undefined
-      ? DEFAULT_MAP_STYLE_URL
-      : parseUrl('VITE_MAP_STYLE_URL', rawMapStyle, ['https:'])
+  const rawPoll = optionalString(env, 'VITE_OPENSKY_POLL_MS')
+  const pollIntervalMs =
+    rawPoll === undefined
+      ? DEFAULT_POLL_INTERVAL_MS
+      : parsePollInterval('VITE_OPENSKY_POLL_MS', rawPoll)
+
+  const mapStyleUrl = parseUrlWithDefault(
+    env,
+    'VITE_MAP_STYLE_URL',
+    DEFAULT_MAP_STYLE_URL,
+    ['https:'],
+  )
 
   const rawCenter = optionalString(env, 'VITE_DEFAULT_CENTER')
   const defaultCenter =
@@ -151,9 +221,10 @@ export function parseConfig(env: RawEnv): AppConfig {
       : parseZoom('VITE_DEFAULT_ZOOM', rawZoom)
 
   return {
-    skySpyHttp,
-    skySpyWs,
-    skySpyToken: optionalString(env, 'VITE_SKYSPY_TOKEN'),
+    openSkyApiBase,
+    openSkyAuthUrl,
+    ...parseCredentials(env),
+    pollIntervalMs,
     mapStyleUrl,
     defaultCenter,
     defaultZoom,

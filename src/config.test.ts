@@ -1,90 +1,136 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_MAP_STYLE_URL,
+  DEFAULT_OPENSKY_API_BASE,
+  DEFAULT_OPENSKY_AUTH_URL,
+  DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_ZOOM,
+  MIN_POLL_INTERVAL_MS,
   parseConfig,
   type RawEnv,
 } from './config'
 
-const TOKEN = 'super-secret-token-value'
-
-function env(overrides: RawEnv = {}): RawEnv {
-  return {
-    VITE_SKYSPY_HTTP: 'http://localhost:8000',
-    VITE_SKYSPY_WS: 'ws://localhost:8000',
-    ...overrides,
-  }
-}
+const CLIENT_ID = 'flightscanner-api-client'
+const SECRET = 'super-secret-client-secret-value'
 
 describe('parseConfig', () => {
   it('parses a fully valid environment', () => {
-    const result = parseConfig(
-      env({
-        VITE_SKYSPY_HTTP: 'https://skyspy.example.com/',
-        VITE_SKYSPY_WS: 'wss://skyspy.example.com///',
-        VITE_SKYSPY_TOKEN: TOKEN,
-        VITE_MAP_STYLE_URL: 'https://tiles.example.com/style.json',
-        VITE_DEFAULT_CENTER: '52.3676,4.9041',
-        VITE_DEFAULT_ZOOM: '9.5',
-      }),
-    )
+    const result = parseConfig({
+      VITE_OPENSKY_API_BASE: 'https://opensky.example.com/api/',
+      VITE_OPENSKY_AUTH_URL: 'https://auth.example.com/token///',
+      VITE_OPENSKY_CLIENT_ID: CLIENT_ID,
+      VITE_OPENSKY_CLIENT_SECRET: SECRET,
+      VITE_OPENSKY_POLL_MS: '60000',
+      VITE_MAP_STYLE_URL: 'https://tiles.example.com/style.json',
+      VITE_DEFAULT_CENTER: '52.3676,4.9041',
+      VITE_DEFAULT_ZOOM: '9.5',
+    })
 
     expect(result).toEqual({
-      skySpyHttp: 'https://skyspy.example.com',
-      skySpyWs: 'wss://skyspy.example.com',
-      skySpyToken: TOKEN,
+      openSkyApiBase: 'https://opensky.example.com/api',
+      openSkyAuthUrl: 'https://auth.example.com/token',
+      openSkyClientId: CLIENT_ID,
+      openSkyClientSecret: SECRET,
+      pollIntervalMs: 60000,
       mapStyleUrl: 'https://tiles.example.com/style.json',
       defaultCenter: { lat: 52.3676, lon: 4.9041 },
       defaultZoom: 9.5,
     })
   })
 
-  it('applies defaults when the optional variables are absent', () => {
-    const result = parseConfig(env())
+  it('needs no variables at all, defaulting to anonymous OpenSky access', () => {
+    const result = parseConfig({})
 
-    expect(result.skySpyToken).toBeUndefined()
-    expect(result.mapStyleUrl).toBe(DEFAULT_MAP_STYLE_URL)
-    expect(result.defaultCenter).toEqual({ lat: 0, lon: 0 })
-    expect(result.defaultZoom).toBe(DEFAULT_ZOOM)
+    expect(result).toEqual({
+      openSkyApiBase: DEFAULT_OPENSKY_API_BASE,
+      openSkyAuthUrl: DEFAULT_OPENSKY_AUTH_URL,
+      openSkyClientId: undefined,
+      openSkyClientSecret: undefined,
+      pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+      mapStyleUrl: DEFAULT_MAP_STYLE_URL,
+      defaultCenter: { lat: 0, lon: 0 },
+      defaultZoom: DEFAULT_ZOOM,
+    })
   })
 
-  describe('required variables', () => {
-    it.each(['VITE_SKYSPY_HTTP', 'VITE_SKYSPY_WS'])(
-      'throws naming %s when it is missing',
+  describe('OpenSky URLs', () => {
+    it.each(['VITE_OPENSKY_API_BASE', 'VITE_OPENSKY_AUTH_URL'])(
+      'falls back to the default when %s is blank',
       (key) => {
-        expect(() => parseConfig(env({ [key]: undefined }))).toThrow(key)
+        expect(() => parseConfig({ [key]: '   ' })).not.toThrow()
       },
     )
 
-    it.each(['VITE_SKYSPY_HTTP', 'VITE_SKYSPY_WS'])(
-      'throws naming %s when it is blank',
+    it.each(['VITE_OPENSKY_API_BASE', 'VITE_OPENSKY_AUTH_URL'])(
+      'rejects a relative %s',
       (key) => {
-        expect(() => parseConfig(env({ [key]: '   ' }))).toThrow(key)
+        expect(() => parseConfig({ [key]: '/api' })).toThrow(key)
       },
     )
 
-    it('rejects a relative SkySpy HTTP URL', () => {
-      expect(() => parseConfig(env({ VITE_SKYSPY_HTTP: '/api' }))).toThrow(
-        'VITE_SKYSPY_HTTP',
-      )
+    it.each(['VITE_OPENSKY_API_BASE', 'VITE_OPENSKY_AUTH_URL'])(
+      'rejects a non http scheme on %s',
+      (key) => {
+        expect(() => parseConfig({ [key]: 'ws://opensky.example.com' })).toThrow(
+          key,
+        )
+      },
+    )
+  })
+
+  describe('OpenSky credentials', () => {
+    it('resolves both to undefined when neither is set', () => {
+      const result = parseConfig({})
+      expect(result.openSkyClientId).toBeUndefined()
+      expect(result.openSkyClientSecret).toBeUndefined()
     })
 
-    it('rejects the wrong scheme on each SkySpy URL', () => {
+    it('rejects a client ID without a secret', () => {
       expect(() =>
-        parseConfig(env({ VITE_SKYSPY_HTTP: 'ws://localhost:8000' })),
-      ).toThrow('VITE_SKYSPY_HTTP')
+        parseConfig({ VITE_OPENSKY_CLIENT_ID: CLIENT_ID }),
+      ).toThrow('VITE_OPENSKY_CLIENT_SECRET')
+    })
+
+    it('rejects a secret without a client ID', () => {
       expect(() =>
-        parseConfig(env({ VITE_SKYSPY_WS: 'http://localhost:8000' })),
-      ).toThrow('VITE_SKYSPY_WS')
+        parseConfig({ VITE_OPENSKY_CLIENT_SECRET: SECRET }),
+      ).toThrow('VITE_OPENSKY_CLIENT_ID')
+    })
+
+    it('treats a whitespace only secret as absent', () => {
+      expect(() =>
+        parseConfig({
+          VITE_OPENSKY_CLIENT_ID: CLIENT_ID,
+          VITE_OPENSKY_CLIENT_SECRET: '   ',
+        }),
+      ).toThrow('VITE_OPENSKY_CLIENT_SECRET')
+    })
+  })
+
+  describe('VITE_OPENSKY_POLL_MS', () => {
+    it('accepts the minimum', () => {
+      expect(
+        parseConfig({ VITE_OPENSKY_POLL_MS: String(MIN_POLL_INTERVAL_MS) })
+          .pollIntervalMs,
+      ).toBe(MIN_POLL_INTERVAL_MS)
+    })
+
+    it.each([
+      ['below the credit budget floor', '15000'],
+      ['zero', '0'],
+      ['negative', '-1'],
+      ['not a number', 'often'],
+    ])('throws naming the variable for an interval %s', (_case, value) => {
+      expect(() => parseConfig({ VITE_OPENSKY_POLL_MS: value })).toThrow(
+        'VITE_OPENSKY_POLL_MS',
+      )
     })
   })
 
   describe('VITE_MAP_STYLE_URL', () => {
     it('rejects a non https style URL', () => {
       expect(() =>
-        parseConfig(
-          env({ VITE_MAP_STYLE_URL: 'http://tiles.example.com/s.json' }),
-        ),
+        parseConfig({ VITE_MAP_STYLE_URL: 'http://tiles.example.com/s.json' }),
       ).toThrow('VITE_MAP_STYLE_URL')
     })
   })
@@ -99,17 +145,17 @@ describe('parseConfig', () => {
       ['latitude out of range', '91,0'],
       ['longitude out of range', '0,181'],
     ])('throws naming the variable for %s', (_case, value) => {
-      expect(() => parseConfig(env({ VITE_DEFAULT_CENTER: value }))).toThrow(
+      expect(() => parseConfig({ VITE_DEFAULT_CENTER: value })).toThrow(
         'VITE_DEFAULT_CENTER',
       )
     })
 
     it('accepts the range boundaries', () => {
       expect(
-        parseConfig(env({ VITE_DEFAULT_CENTER: '-90,-180' })).defaultCenter,
+        parseConfig({ VITE_DEFAULT_CENTER: '-90,-180' }).defaultCenter,
       ).toEqual({ lat: -90, lon: -180 })
       expect(
-        parseConfig(env({ VITE_DEFAULT_CENTER: '90,180' })).defaultCenter,
+        parseConfig({ VITE_DEFAULT_CENTER: '90,180' }).defaultCenter,
       ).toEqual({ lat: 90, lon: 180 })
     })
   })
@@ -120,51 +166,43 @@ describe('parseConfig', () => {
       ['above range', '23'],
       ['not a number', 'close'],
     ])('throws naming the variable for a zoom %s', (_case, value) => {
-      expect(() => parseConfig(env({ VITE_DEFAULT_ZOOM: value }))).toThrow(
+      expect(() => parseConfig({ VITE_DEFAULT_ZOOM: value })).toThrow(
         'VITE_DEFAULT_ZOOM',
       )
     })
 
     it('accepts the range boundaries', () => {
-      expect(parseConfig(env({ VITE_DEFAULT_ZOOM: '0' })).defaultZoom).toBe(0)
-      expect(parseConfig(env({ VITE_DEFAULT_ZOOM: '22' })).defaultZoom).toBe(22)
+      expect(parseConfig({ VITE_DEFAULT_ZOOM: '0' }).defaultZoom).toBe(0)
+      expect(parseConfig({ VITE_DEFAULT_ZOOM: '22' }).defaultZoom).toBe(22)
     })
   })
 
-  describe('VITE_SKYSPY_TOKEN', () => {
-    it.each([
-      ['absent', undefined],
-      ['empty', ''],
-      ['whitespace only', '   '],
-    ])('resolves to undefined when %s', (_case, value) => {
-      expect(
-        parseConfig(env({ VITE_SKYSPY_TOKEN: value })).skySpyToken,
-      ).toBeUndefined()
-    })
+  it('never leaks the client secret in an error message', () => {
+    // Every failure path runs with valid credentials present. None may echo them.
+    const failures: RawEnv[] = [
+      { VITE_OPENSKY_API_BASE: 'not-a-url' },
+      { VITE_OPENSKY_AUTH_URL: 'not-a-url' },
+      { VITE_OPENSKY_POLL_MS: '1000' },
+      { VITE_MAP_STYLE_URL: 'http://tiles.example.com/s.json' },
+      { VITE_DEFAULT_CENTER: 'nope' },
+      { VITE_DEFAULT_ZOOM: '99' },
+      { VITE_OPENSKY_CLIENT_SECRET: undefined },
+    ]
 
-    it('never leaks the token value in an error message', () => {
-      // Every failure path runs with a valid token present. None may echo it.
-      const failures: RawEnv[] = [
-        { VITE_SKYSPY_HTTP: undefined },
-        { VITE_SKYSPY_WS: undefined },
-        { VITE_SKYSPY_HTTP: 'not-a-url' },
-        { VITE_SKYSPY_WS: 'not-a-url' },
-        { VITE_MAP_STYLE_URL: 'http://tiles.example.com/s.json' },
-        { VITE_DEFAULT_CENTER: 'nope' },
-        { VITE_DEFAULT_ZOOM: '99' },
-      ]
-
-      for (const overrides of failures) {
-        let message = ''
-        try {
-          parseConfig(env({ VITE_SKYSPY_TOKEN: TOKEN, ...overrides }))
-        } catch (error) {
-          message = error instanceof Error ? error.message : String(error)
-        }
-
-        expect(message).not.toBe('')
-        expect(message).not.toContain(TOKEN)
+    for (const overrides of failures) {
+      let message = ''
+      try {
+        parseConfig({
+          VITE_OPENSKY_CLIENT_ID: CLIENT_ID,
+          VITE_OPENSKY_CLIENT_SECRET: SECRET,
+          ...overrides,
+        })
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error)
       }
-    })
+
+      expect(message).not.toBe('')
+      expect(message).not.toContain(SECRET)
+    }
   })
 })
