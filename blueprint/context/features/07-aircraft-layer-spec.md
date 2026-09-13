@@ -4,7 +4,8 @@
 **Build attempt:** 1
 **Branch:** feature/07-aircraft-layer
 
-Source: `docs/flight-map-plan.md` §6 Step 7 and §5 Data flow.
+Source: `blueprint/project-plan.md` §5, "Architecture decisions that outlived
+the SkySpy plan".
 
 ## Goal
 

@@ -13,13 +13,15 @@ for optional tool settings.
 
 ## What this is
 
-FlightScanner is a live aircraft map over the SkySpy WebSocket API, built with
-Vite, React, and MapLibre. SkySpy streams real-time ADS-B contacts but ships no
-map; this renders that stream as one you can watch, with click-to-select detail
-modelled on Flightradar24.
+FlightScanner is a live aircraft map over the OpenSky Network REST API, built
+with Vite, React, and MapLibre. OpenSky publishes ADS-B state vectors as
+positional JSON arrays; this polls one fixed bounding box through a small
+backend proxy, which CORS makes mandatory, and renders the result as a map you
+can watch, with click-to-select detail modelled on Flightradar24.
 
-Full product context is in `blueprint/context/project-overview.md`; the technical
-plan and verified API details are in `docs/flight-map-plan.md`.
+Full product context is in `blueprint/context/project-overview.md`; the
+verified API details, architecture decisions, and the proxy runbook are in
+`blueprint/project-plan.md` and `docs/proxy.md`.
 
 This project is built with the **AI Blueprint**, a workflow layer, not an
 app skeleton. To start a new project, scaffold the app first in an empty folder
@@ -38,7 +40,7 @@ The workflow is defined by the local skills and context files below.
 - `blueprint/context/ai-interaction.md` - read when running the Blueprint workflow
 - `blueprint/context/current-feature.md` - the one feature, fix, or rollback being built right now
 - `blueprint/context/features/<nn>-<name>-spec.md` - pre-written detailed spec per build-plan item; `/feature <n>` should read the matching file as its primary source
-- `docs/flight-map-plan.md` - the technical plan behind those specs: verified SkySpy API details, architecture decisions, and risks
+- `docs/proxy.md` - the proxy runbook: routes, error codes, local and Vercel configuration
 
 Reuse relevant context already loaded in the session. Claude Code imports only
 this file; its Blueprint skills load the other files on demand.

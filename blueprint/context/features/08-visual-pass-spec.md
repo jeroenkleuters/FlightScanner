@@ -4,7 +4,7 @@
 **Build attempt:** 1
 **Branch:** feature/08-visual-pass
 
-Source: `docs/flight-map-plan.md` §6 Step 8 and §1 UX reference.
+Source: `blueprint/project-plan.md` §7.
 
 ## Goal
 

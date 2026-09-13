@@ -4,7 +4,7 @@
 **Build attempt:** 1
 **Branch:** feature/09-selection-detail-trail
 
-Source: `docs/flight-map-plan.md` §6 Step 9 and §1 UX reference.
+Source: `blueprint/project-plan.md` §7.
 
 ## Goal
 
@@ -90,7 +90,7 @@ Selection is by `hex`. It survives updates and reconnects; if the aircraft is
 gone after a reconnect, the panel shows signal-lost rather than clearing
 silently.
 
-The trail is **client-side only** - SkySpy provides no position history, so the
+The trail is **client-side only** - OpenSky provides no position history, so the
 trail starts empty at selection and grows from that moment. This must not be
 presented as full flight history.
 

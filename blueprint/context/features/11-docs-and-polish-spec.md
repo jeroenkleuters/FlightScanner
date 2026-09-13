@@ -4,17 +4,17 @@
 **Build attempt:** 1
 **Branch:** feature/11-docs-and-polish
 
-Source: `docs/flight-map-plan.md` §6 Step 11.
+Source: `blueprint/project-plan.md`.
 
 ## Goal
 
-Close v1: someone else can clone the repository, point it at their own SkySpy
-instance or the mock, and run it - and the app handles small screens, first load,
-and errors without embarrassment.
+Close v1: someone else can clone the repository, run it against OpenSky through
+the proxy or against the mock feed, and have it work - and the app handles small
+screens, first load, and errors without embarrassment.
 
 ## In scope
 
-- `README.md`: setup, environment variables, real instance vs mock, known gaps
+- `README.md`: setup, environment variables, live OpenSky vs mock, known gaps
 - Loading and error states across the app
 - Responsive layout down to mobile widths
 - Basic accessibility pass
@@ -33,16 +33,18 @@ Implement all steps, then one review packet.
 ## Build steps
 
 - [ ] **Write `README.md`:** what the app is, screenshot, prerequisites, install,
-  every environment variable with an example, how to run against a real SkySpy
-  instance, how to run against the mock, and all available commands.
+  every environment variable with an example, how to run against live OpenSky
+  through the proxy, how to run against the mock, and all available commands.
   **Done when:** following it from a clean clone produces a running app against
   the mock without reading any other file.
-- [ ] **Document known gaps and constraints** in the README: SkySpy is
-  self-hosted so coverage is one receiver's radius and a sparse map is normal;
-  no route or origin/destination data exists; trails start at selection and are
-  not flight history; `VITE_`-prefixed tokens are readable by anyone using the
-  app, so a public deployment needs a backend proxy holding the token
-  server-side.
+- [ ] **Document known gaps and constraints** in the README: the map polls one
+  fixed bounding box that does not follow the camera, so panning outside it
+  shows nothing and a sparse map inside it is normal; OpenSky is polled every
+  30 s, not streamed, and vectors are already seconds old when they arrive; no
+  route or origin/destination data exists; trails start at selection and are not
+  flight history; the daily credit budget is per account, so a public deployment
+  shares one allowance; `VITE_`-prefixed variables are readable by anyone using
+  the app, which is why the OpenSky credentials live only on the proxy.
   **Done when:** each constraint is stated plainly enough that a new user is not
   surprised by it.
 - [ ] **Add a first-load state.** Before the seed or first snapshot lands, show
@@ -78,7 +80,7 @@ Implement all steps, then one review packet.
 ## Data / contracts
 
 No new data. Documentation must match the code as built - if implementation
-diverged from `docs/flight-map-plan.md`, the README describes reality and the
+diverged from `blueprint/project-plan.md`, the README describes reality and the
 divergence is noted.
 
 ## Testing

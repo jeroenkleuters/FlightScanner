@@ -4,8 +4,6 @@
 **Build attempt:** 1
 **Branch:** feature/02-map-shell
 
-Source: `docs/flight-map-plan.md` §6 Step 2.
-
 ## Goal
 
 A full-viewport, pannable, zoomable dark map, centred on the configured location
@@ -15,7 +13,7 @@ A full-viewport, pannable, zoomable dark map, centred on the configured location
 
 Flightradar24's basemap: dark, desaturated, terrain and roads receding so
 aircraft can pop against it. Land and water are distinguishable but muted;
-labels are minimal. See `docs/flight-map-plan.md` §1 "UX reference".
+labels are minimal. See `blueprint/project-plan.md` §7.
 
 ## In scope
 
@@ -78,4 +76,4 @@ features (via `react-map-gl` ref or context) so layers can attach to it.
   render as a single GeoJSON symbol layer in feature 07; establishing a DOM
   marker pattern here would have to be torn out.
 - Verify the tile provider's attribution and usage terms now, while choosing it -
-  not at release. See `docs/flight-map-plan.md` §8 risk 8.
+  not at release.

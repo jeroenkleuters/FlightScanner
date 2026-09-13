@@ -4,8 +4,6 @@
 **Build attempt:** 1
 **Branch:** feature/01-scaffold
 
-Source: `docs/flight-map-plan.md` §6 Step 1.
-
 ## Goal
 
 A running Vite + React + TypeScript app with linting, formatting, testing, and
@@ -92,6 +90,6 @@ Absent means connect without auth.
 - Node 20+.
 - Every `VITE_`-prefixed variable is baked into the client bundle and readable by
   anyone using the app. Never put a secret behind that prefix that would matter
-  if leaked. See `docs/flight-map-plan.md` §8 risk 9.
+  if leaked.
 - `VITE_DEFAULT_CENTER` is a `"lat,lon"` string; parse and validate it, don't
   trust it.

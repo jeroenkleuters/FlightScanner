@@ -1,6 +1,6 @@
 # FlightScanner - Project Overview
 
-<!-- blueprint:source-hash 8dd500f32f10e31adc7cca1151e8ba3829b0aa6ca3314e29a379fb711baa0c94 -->
+<!-- blueprint:source-hash 3b9662df15fb810b3764f5ee117641d18b55a61bb1bc42a82d5914e0b4265986 -->
 
 > A live aircraft map over the OpenSky Network REST API, built with Vite, React,
 > and MapLibre.
@@ -20,6 +20,8 @@ fleet grows, honest degraded states, and working inside a hard external quota.
 > **Data source changed 2026-09-13.** Planned against a self-hosted SkySpy
 > WebSocket API that never had a reachable instance. Now the public OpenSky REST
 > API, verified live. Polled rather than streamed, and it blocks browser origins.
+> The SkySpy technical plan and the nine specs written against it were deleted
+> the same day; what survived the switch lives in `blueprint/project-plan.md`.
 
 ## Users
 
@@ -30,7 +32,7 @@ fleet grows, honest degraded states, and working inside a hard external quota.
 
 No accounts, no access tiers, a single anonymous view. Not built for global
 simultaneous coverage, commercial tracking, or anything safety-critical. The map
-shows one bounding box at a time, refreshed on an interval.
+shows one fixed bounding box, refreshed on an interval.
 
 ## Features
 
@@ -41,14 +43,14 @@ that is the Flightradar24 moment the rest of v1 exists to support.
 
 1. **Project scaffold** - Vite + React + TS, lint, format, Vitest, env config, `verify` script. **Done.**
 2. **Map shell** - full-viewport dark MapLibre map centred on the configured location. **Done.**
-2. **Backend proxy** - stateless proxy for OpenSky states and tokens, credentials server side, verified from the browser.
-3. **Mock feed server** - replay the committed fixture as a moving feed with fault injection.
-4. **Polling client** - interval loop over the shipped transport, visibility pause, backoff, credit tracking.
-5. **Aircraft store** - pure `Map<hex, Aircraft>` reconciling successive full snapshots, deriving departures and staleness.
+3. **Backend proxy** - stateless proxy for OpenSky states and tokens, credentials server side, verified from the browser. **Done.**
+4. **Mock feed server** - replay the committed fixture as a moving feed with fault injection.
+5. **Polling client** - interval loop against the one fixed box, visibility pause, backoff, credit tracking.
+6. **Aircraft store** - pure `Map<hex, Aircraft>` reconciling successive full snapshots, deriving staleness and removal.
 7. **Aircraft layer** - one GeoJSON symbol layer, heading-rotated icons, throttled updates.
 8. **FR24-style visual pass** - altitude colour ramp, zoom sizing, labels, stale fading, legend.
 9. **Selection, detail panel, and trail** - click to select, fleet dims, trail draws, live telemetry.
-10. **Poll status and resilience** - status indicator, remaining credits, stale warning, manual refresh.
+10. **Poll status and resilience** - status indicator, remaining credits, stale warning, manual refresh, "outside the covered box" state.
 11. **Documentation and polish** - README, loading and error states, responsive layout, accessibility.
 
 ### v2 - aircraft identity and photos
@@ -58,22 +60,20 @@ that is the Flightradar24 moment the rest of v1 exists to support.
 14. **Aircraft photo** - planespotters photo via the proxy, mandatory photographer and link attribution.
 15. **Map enrichment from identity** - per-type silhouettes, cache-only.
 
-> **Nine spec files are stale.** Items 3, 4, 5, 6, 10, 12, 13, 14, and 15 still
-> have SkySpy WebSocket specs in `blueprint/context/features/`, and
-> `docs/flight-map-plan.md` is stale throughout. Respec those from this overview
-> rather than reading the old files. Items 7, 8, 9, and 11 are source-agnostic
-> and their specs remain usable.
+**Specs on disk:** 1, 2, 7, 8, 9, and 11 have pre-written specs in
+`blueprint/context/features/`. The rest were written against SkySpy and were
+deleted rather than left to mislead `/feature`, which should spec those items
+from this overview and `blueprint/project-plan.md`.
 
 **Already shipped outside the build plan:** the `opensky-rest-data-source` fix
 delivered `src/api/opensky.ts` (token cache, bounded states query, positional
 vector decoder), the `Aircraft` type, OpenSky config, and a real captured fixture
-at `docs/fixtures/opensky-states-nl.json`. Feature 3 is proxy work, not decoding
-work.
+at `docs/fixtures/opensky-states-nl.json`.
 
 **Explicitly excluded** from both phases: ACARS, safety events, alerts, NOTAMs,
 cannonball mode, audio, airspace overlays, filtering, search, user accounts, and
-whole-fleet trails. Route and origin/destination data is excluded by necessity -
-no OpenSky endpoint provides it.
+a viewport-following query region. Route and origin/destination data is excluded
+by necessity - no OpenSky endpoint provides it.
 
 ## Data model
 
@@ -119,16 +119,26 @@ vectors inside the bounding box, so the store diffs successive snapshots:
 | --- | --- |
 | `hex` in new snapshot, not in store | Insert |
 | `hex` in both | Update in place, preserving trail and selection |
-| `hex` in store, absent from snapshot | Not deleted immediately. Marked stale, dropped after a grace period |
+| `hex` in store, absent from snapshot | Dropped once 30 s have passed since the last snapshot that contained it |
 | Empty or `null` `states` | A valid empty box, never an error |
 
-> A single absence is not a departure. Aircraft drop out of one poll and return in
-> the next, so removal is time-based, not presence-based.
+> **Removal rule, locked:** an aircraft is dropped 30 s after the last snapshot
+> that contained it, **evaluated only when a new snapshot arrives, never on a
+> timer.** That ties removal to the poll cadence, so the map cannot empty itself
+> between polls if the interval is raised. At the default 30 s poll, the first
+> snapshot omitting an aircraft is the one that removes it, leaving no ghost at a
+> stale position.
+
+> **Removal is not fading.** Fading is driven by `lastContact` and describes how
+> old OpenSky's own reading is: an aircraft present in every snapshot can fade
+> because its fix is minutes old, while one that disappears between polls is
+> dropped outright.
 
 ### TrailBuffer
 
 Ring buffer for the **selected aircraft only**, held separately from the store so
-it costs nothing when nothing is selected.
+it costs nothing when nothing is selected and cannot grow unbounded across a long
+session.
 
 - `hex` (string) - the aircraft it belongs to
 - `points` (array of `{lat, lon}`, cap ~200) - oldest discarded past the cap
@@ -136,6 +146,7 @@ it costs nothing when nothing is selected.
 
 > Client-side only, and at a 30 s poll interval a trail is a coarse dotted track,
 > not a smooth path. It is not flight history and must not be presented as such.
+> There are no whole-fleet trails; the buffer holds one aircraft by design.
 
 ### AircraftIdentity (v2)
 
@@ -191,11 +202,42 @@ From planespotters `GET https://api.planespotters.net/pub/photos/hex/{hex}`.
   **Required, not optional.**
 - **Vitest + React Testing Library**, ESLint + Prettier
 
+### Architecture decisions, locked
+
+- **`hex` is the identity key** everywhere.
+- **The store is a mutable `Map`, not React state.** React re-renders for poll
+  status, selection, and counts; aircraft movement never passes through the
+  reconciler.
+- **The render path is a throttled `setData()`** on one MapLibre GeoJSON source,
+  not a marker per aircraft.
+- **Positionless aircraft stay in the store** but are omitted from the layer.
+  They still count, and a later snapshot may give them a fix.
+- **The trail buffer is separate from the store** and holds one aircraft.
+
+### The query region is one fixed bounding box
+
+Every poll asks OpenSky for the same box, set once by configuration and constant
+for the session. **Panning and zooming move the camera over data already fetched;
+they never trigger a request.** Three reasons, in order of weight:
+
+1. **Cost is predictable.** One bounded query is one credit whatever its size. A
+   viewport-tracking box turns every pan into a poll of its own against a 4000
+   per day budget; a fixed box spends exactly one credit per interval.
+2. **Identity survives.** A moving box would make aircraft vanish and reappear as
+   the query region shifted underneath them, breaking trails and selection on a
+   plain map drag.
+3. **It is honest about coverage.** A fixed box is a claim the app can keep: this
+   region, refreshed every 30 s.
+
+Default box `50.5,3.0,53.8,7.3` via `VITE_OPENSKY_BBOX` - roughly the Netherlands
+with the Belgian and German border regions, matching the default Amsterdam centre
+and the committed fixture. Changing region is a config change and a reload, not
+an in-app gesture.
+
 ### External APIs
 
 **OpenSky Network.** REST at `https://opensky-network.org/api`, OAuth2 tokens
-from the public Keycloak realm at
-`https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token`.
+from the public Keycloak realm.
 
 Verified live 2026-09-13:
 
@@ -237,7 +279,8 @@ map tiles. Own assets and palette throughout.
 
 **Single screen, no routing.** A full-viewport map with overlays:
 
-- Map canvas - aircraft symbol layer, trail layer beneath it
+- Map canvas - aircraft symbol layer, trail layer beneath it, and the polled box
+  drawn faintly so its edge is visible before the user crosses it
 - Detail panel - left sidebar; bottom sheet below ~640 px. Layout reserves an
   identity slot above telemetry for features 13-14, so adding them causes no
   reflow
@@ -245,9 +288,16 @@ map tiles. Own assets and palette throughout.
 - Altitude legend - compact, non-blocking
 
 Honest about limits: a frozen map that looks healthy is worse than one admitting
-it is stale. Aircraft that stop reporting fade rather than sitting at full
-brightness; missing values render as dashes, never zeros; a sparse map is normal
-because the view is one bounding box and OpenSky coverage varies by region.
+it is stale.
+
+- Aircraft that stop reporting fade rather than sitting at full brightness, and
+  are removed rather than frozen in place.
+- Missing values render as dashes, never zeros.
+- A sparse map is normal: the view is one bounding box and OpenSky coverage
+  varies by region.
+- **Panning outside the box shows nothing, and the app must say so.** An empty
+  map is indistinguishable from a broken one, so the UI states that the camera is
+  outside the covered area.
 
 ## Deployment
 
@@ -255,28 +305,30 @@ because the view is one bounding box and OpenSky coverage varies by region.
 has not been run, so deploy readiness and smoke tests are not yet documented as
 a checked pass.
 
-A static SPA (`vite build` → `dist/`) plus two proxy endpoints, which is why a
+A static SPA (`vite build` to `dist/`) plus two proxy endpoints, which is why a
 host serving static files alongside serverless functions fits naturally.
 `vercel.json` pins the build command, `dist/` as the output, and an SPA rewrite
 that leaves `/api/` alone. `api/opensky/states.ts` and `api/health.ts` are the
 function entrypoints and share `src/server/router.ts` with the dev and preview
 servers, so there is no deploy-only code path. `OPENSKY_CLIENT_ID` and
 `OPENSKY_CLIENT_SECRET` are set as Vercel project variables, so the deployment
-runs authenticated at 4000 credits per day. See `docs/proxy.md` for the
-runbook.
+runs authenticated at 4000 credits per day. See `docs/proxy.md` for the runbook.
 
 1. **The proxy is required in every environment**, including local development.
    Vite's dev proxy covers development; production needs the real thing.
 2. **Credentials live only on the proxy.** Every `VITE_` variable is readable in
    the client bundle, so nothing sensitive belongs there.
 3. **The credit budget is per account, not per user.** A public deployment shares
-   one 4000 per day budget across everyone who loads it, making the poll interval
-   and any caching deployment decisions, not just client ones.
+   one 4000 per day budget across everyone who loads it, making the poll
+   interval, the bounding box, and any caching deployment decisions rather than
+   only client ones. Because the box is fixed, a shared deployment costs one
+   credit per interval in total, not one per viewer per pan.
 
 Client env vars by name, all optional and baked into the bundle at build time:
-`VITE_OPENSKY_POLL_MS`, `VITE_MAP_STYLE_URL`, `VITE_DEFAULT_CENTER`,
-`VITE_DEFAULT_ZOOM`. Server-side only: `OPENSKY_CLIENT_ID`,
-`OPENSKY_CLIENT_SECRET`, `OPENSKY_API_BASE`, `OPENSKY_AUTH_URL`.
+`VITE_OPENSKY_POLL_MS`, `VITE_OPENSKY_BBOX`, `VITE_MAP_STYLE_URL`,
+`VITE_DEFAULT_CENTER`, `VITE_DEFAULT_ZOOM`. Server-side only:
+`OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`, `OPENSKY_API_BASE`,
+`OPENSKY_AUTH_URL`.
 
 No database, workers, or cron. Health check applies to the proxy only.
 
@@ -284,16 +336,15 @@ No database, workers, or cron. Health check applies to the proxy only.
 
 > Resolve these in the plans, then re-run `/overview`.
 
-1. **Which bounding box, and does it follow the map?** `VITE_DEFAULT_CENTER` is
-   set to Amsterdam, but no plan says whether the polled box is fixed or tracks
-   the viewport. Tracking the viewport means a new box on every pan, which
-   interacts directly with the credit budget.
-2. **How long before an absent aircraft is dropped?** Snapshot reconciliation
-   needs a grace period. The old 60 s stale / 5 min drop came from a 10 Hz stream
-   and is unlikely to be right at a 30 s poll.
-3. **Nine stale spec files and `docs/flight-map-plan.md`.** Listed above. They
-   describe a WebSocket architecture that no longer exists and will mislead
-   `/feature` until rewritten.
-4. **Six open findings in the ledger.** F-01 and F-02 from the OpenSky fix are
-   P2 and both partly dissolve once the proxy exists, since credentials move
-   server side. Worth re-auditing after feature 3 rather than fixing twice.
+1. **Fourteen open findings in the ledger**, four of them P2, none P0 or P1.
+   F-01 to F-06 came from the OpenSky fix and F-07 to F-14 from the proxy. F-07
+   is the one that reads as a plan-level gap rather than a code nit: the plans
+   and `docs/proxy.md` both say the proxy is same-origin only, but nothing
+   enforces it, so the route is publicly callable and any site can spend this
+   account's daily budget. Worth deciding before a public deploy.
+2. **Nothing owns `VITE_OPENSKY_BBOX` yet.** The plans introduce it, but the
+   config parser in `src/config.ts` does not read it and no build-plan item names
+   it. Feature 5 is the natural home; say so, or it will be invented mid-build.
+3. **Nothing owns drawing the box outline.** The plan requires the fixed box to
+   be visible on the map, but that sits between feature 8 (visual pass) and
+   feature 10 (status and resilience) and is named by neither.

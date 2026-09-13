@@ -10,7 +10,7 @@
  *
  * CARTO's basemaps are free to use with attribution retained. Confirm the
  * provider's current terms before any public deployment; `/release` owns that
- * check. See docs/flight-map-plan.md section 8 risk 8.
+ * check.
  *
  * This module reads no environment. `src/config.ts` remains the only reader of
  * `import.meta.env` and imports this constant as its fallback.
