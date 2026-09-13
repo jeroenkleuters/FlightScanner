@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
-import type { UsePollingResult } from './api/usePolling'
+import { act, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { StatesSnapshot } from './api/opensky'
+import type { UsePollingOptions, UsePollingResult } from './api/usePolling'
 
 // The map itself needs WebGL, which jsdom does not have. App's job here is only
 // to place FlightMap inside the full-viewport shell.
@@ -10,8 +11,15 @@ vi.mock('./map/FlightMap', () => ({
 
 const pollState = vi.fn<() => UsePollingResult>()
 
+// Captured so a test can deliver a snapshot the way the real poller would, and
+// prove App wired it to the store rather than to a figure of its own.
+let deliver: UsePollingOptions['onSnapshot']
+
 vi.mock('./api/usePolling', () => ({
-  usePolling: () => pollState(),
+  usePolling: (options: UsePollingOptions = {}) => {
+    deliver = options.onSnapshot
+    return pollState()
+  },
 }))
 
 const { default: App } = await import('./App')
@@ -24,6 +32,17 @@ function state(overrides: Partial<UsePollingResult> = {}): UsePollingResult {
     ...overrides,
   }
 }
+
+function snapshot(hexes: string[]): StatesSnapshot {
+  return {
+    time: 1_700_000_000,
+    aircraft: hexes.map((hex) => ({ hex, lastSeen: 0, stale: false })),
+  }
+}
+
+beforeEach(() => {
+  deliver = undefined
+})
 
 describe('App', () => {
   it('renders the map inside the full viewport shell', () => {
@@ -45,14 +64,26 @@ describe('App', () => {
   })
 
   it('shows the live figures once a snapshot arrives', () => {
-    pollState.mockReturnValue(
-      state({ aircraftCount: 0, creditsRemaining: 3999 }),
-    )
+    pollState.mockReturnValue(state({ creditsRemaining: 3999 }))
     render(<App />)
 
+    act(() => deliver?.(snapshot(['abc123', 'def456'])))
+
     expect(screen.getByText('Live')).toBeTruthy()
-    expect(screen.getByText('0 aircraft')).toBeTruthy()
+    expect(screen.getByText('2 aircraft')).toBeTruthy()
     expect(screen.getByText('3999 credits')).toBeTruthy()
+  })
+
+  it('counts the fleet rather than the size of the last snapshot', () => {
+    // The poller's own aircraftCount is the snapshot size, which resets every
+    // poll. The readout must show what the store still holds instead.
+    pollState.mockReturnValue(state({ aircraftCount: 1 }))
+    render(<App />)
+
+    act(() => deliver?.(snapshot(['abc123', 'def456'])))
+    act(() => deliver?.(snapshot(['abc123'])))
+
+    expect(screen.getByText('2 aircraft')).toBeTruthy()
   })
 
   it.each([
