@@ -26,14 +26,11 @@ export { DEFAULT_MAP_STYLE_URL }
 export const MIN_POLL_INTERVAL_MS = 30_000
 export const DEFAULT_POLL_INTERVAL_MS = 30_000
 
-export const DEFAULT_CENTER = { lat: 0, lon: 0 } as const
-export const DEFAULT_ZOOM = 6
-
 /**
  * Roughly the Netherlands with the Belgian and German border regions, matching
- * the default centre and the committed fixture. The box is fixed for the
- * session: the camera never changes it, so a shared deployment spends one
- * credit per interval in total rather than one per viewer per pan.
+ * the committed fixture. The box is fixed for the session: the camera never
+ * changes it, so a shared deployment spends one credit per interval in total
+ * rather than one per viewer per pan.
  */
 export const DEFAULT_BOUNDING_BOX: BoundingBox = {
   lamin: 50.5,
@@ -41,6 +38,32 @@ export const DEFAULT_BOUNDING_BOX: BoundingBox = {
   lamax: 53.8,
   lomax: 7.3,
 }
+
+/** The middle of a box, in the `{ lat, lon }` shape the camera uses. */
+function centreOf(box: BoundingBox): LatLon {
+  return {
+    lat: (box.lamin + box.lamax) / 2,
+    lon: (box.lomin + box.lomax) / 2,
+  }
+}
+
+/**
+ * The opening view, derived from the box rather than declared beside it.
+ *
+ * These were once an unrelated `{ lat: 0, lon: 0 }` and zoom 6, which put a
+ * deployment with no `VITE_` overrides in the Gulf of Guinea, thousands of
+ * kilometres from the only region the app ever queries: aircraft fetched and
+ * drawn correctly, entirely off-screen. A local `.env` hid it, and `.env` is
+ * gitignored, so nothing carried the correction to a deployment.
+ *
+ * Deriving the centre means moving the box moves the camera with it, and the
+ * two cannot drift apart again. `VITE_DEFAULT_CENTER` and `VITE_DEFAULT_ZOOM`
+ * still override both.
+ */
+export const DEFAULT_CENTER: LatLon = centreOf(DEFAULT_BOUNDING_BOX)
+
+/** Frames the whole box with margin at ordinary window sizes. */
+export const DEFAULT_ZOOM = 7
 
 export interface LatLon {
   lat: number

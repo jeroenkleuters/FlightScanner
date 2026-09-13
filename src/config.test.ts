@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_BOUNDING_BOX,
+  DEFAULT_CENTER,
   DEFAULT_MAP_STYLE_URL,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_ZOOM,
@@ -8,6 +9,43 @@ import {
   parseConfig,
   type RawEnv,
 } from './config'
+
+describe('the default view', () => {
+  // The bug this replaces: the centre was { lat: 0, lon: 0 } while the polled
+  // box was the Netherlands. A deployment with no VITE_ overrides opened on
+  // empty ocean with every aircraft drawn off-screen. These tie the camera to
+  // the box, so moving one without the other fails here rather than in
+  // production.
+  it('opens inside the box the app actually polls', () => {
+    expect(DEFAULT_CENTER.lat).toBeGreaterThanOrEqual(
+      DEFAULT_BOUNDING_BOX.lamin,
+    )
+    expect(DEFAULT_CENTER.lat).toBeLessThanOrEqual(DEFAULT_BOUNDING_BOX.lamax)
+    expect(DEFAULT_CENTER.lon).toBeGreaterThanOrEqual(
+      DEFAULT_BOUNDING_BOX.lomin,
+    )
+    expect(DEFAULT_CENTER.lon).toBeLessThanOrEqual(DEFAULT_BOUNDING_BOX.lomax)
+  })
+
+  it('sits at the middle of the box, not merely somewhere within it', () => {
+    expect(DEFAULT_CENTER).toEqual({
+      lat: (DEFAULT_BOUNDING_BOX.lamin + DEFAULT_BOUNDING_BOX.lamax) / 2,
+      lon: (DEFAULT_BOUNDING_BOX.lomin + DEFAULT_BOUNDING_BOX.lomax) / 2,
+    })
+  })
+
+  it('is a zoom the parser itself would accept', () => {
+    expect(
+      parseConfig({ VITE_DEFAULT_ZOOM: String(DEFAULT_ZOOM) }).defaultZoom,
+    ).toBe(DEFAULT_ZOOM)
+  })
+
+  it('is close enough in to read a country, not a hemisphere', () => {
+    // Zoom 6 showed most of western Europe; the box is one small country.
+    expect(DEFAULT_ZOOM).toBeGreaterThanOrEqual(6)
+    expect(DEFAULT_ZOOM).toBeLessThanOrEqual(9)
+  })
+})
 
 describe('parseConfig', () => {
   it('parses a fully valid environment', () => {
@@ -35,7 +73,7 @@ describe('parseConfig', () => {
       pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
       boundingBox: DEFAULT_BOUNDING_BOX,
       mapStyleUrl: DEFAULT_MAP_STYLE_URL,
-      defaultCenter: { lat: 0, lon: 0 },
+      defaultCenter: DEFAULT_CENTER,
       defaultZoom: DEFAULT_ZOOM,
     })
   })
@@ -84,9 +122,9 @@ describe('parseConfig', () => {
     })
 
     it('accepts a degenerate box with equal edges', () => {
-      expect(parseConfig({ VITE_OPENSKY_BBOX: '52,4,52,4' }).boundingBox).toEqual(
-        { lamin: 52, lomin: 4, lamax: 52, lomax: 4 },
-      )
+      expect(
+        parseConfig({ VITE_OPENSKY_BBOX: '52,4,52,4' }).boundingBox,
+      ).toEqual({ lamin: 52, lomin: 4, lamax: 52, lomax: 4 })
     })
 
     it.each([
