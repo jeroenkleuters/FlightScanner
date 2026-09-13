@@ -8,6 +8,10 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // feature. See src/config.ts.
 import './config'
 import './index.css'
+// Imported for its side effect: MapLibre's worker URL is registered before any
+// map exists. Without it the worker never starts and the map stays blank. See
+// src/map/mapWorker.ts.
+import './map/mapWorker'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
