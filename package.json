@@ -7,10 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "mock": "node mock/server.mjs",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{js,ts,json}\" index.html",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{js,ts,json}\" index.html",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"mock/**/*.mjs\" \"*.{js,ts,json}\" index.html",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"mock/**/*.mjs\" \"*.{js,ts,json}\" index.html",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run typecheck && npm run test && npm run build"

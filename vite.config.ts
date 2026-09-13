@@ -54,7 +54,10 @@ export default defineConfig(({ mode }) => ({
   test: {
     environment: 'jsdom',
     setupFiles: ['src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
+    // The dev-only mock feed lives outside src and is plain Node ESM, but its
+    // projection maths is exactly the kind of silent-wrong-answer logic the
+    // test gate exists for.
+    include: ['src/**/*.test.{ts,tsx}', 'mock/**/*.test.mjs'],
     // An empty run must fail. "No tests ran" must never read as "passed".
     passWithNoTests: false,
     // config.ts validates at module load, so importing it under test needs a

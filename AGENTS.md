@@ -260,6 +260,7 @@ checks do not make the Blueprint unusable.
 - Dev server: `npm run dev` (Vite, http://localhost:5173)
 - Build: `npm run build`
 - Preview production build: `npm run preview` (http://localhost:4173)
+- Mock feed: `npm run mock` (dev only, http://127.0.0.1:8787; see `docs/mock-feed.md`)
 - Typecheck: `npm run typecheck`
 - Lint: `npm run lint`
 - Format: `npm run format`

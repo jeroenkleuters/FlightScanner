@@ -33,6 +33,18 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // The mock feed server: plain Node ESM on purpose, so no build step and no
+    // dependency stands between a developer and a running feed. Untyped, which
+    // is why it is linted rather than left unchecked.
+    files: ['mock/**/*.mjs'],
+    extends: [js.configs.recommended, prettier],
+    languageOptions: {
+      globals: globals.node,
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+    },
+  },
+  {
     files: ['*.config.{js,ts}'],
     extends: [tseslint.configs.disableTypeChecked],
   },

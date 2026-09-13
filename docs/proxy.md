@@ -45,6 +45,10 @@ Server-side only, never `VITE_` prefixed and never sent to the browser:
 `OPENSKY_AUTH_URL`. Set both credentials or neither; half a pair is rejected
 rather than silently downgraded to the smaller anonymous quota.
 
+Pointing `OPENSKY_API_BASE` and `OPENSKY_AUTH_URL` at the dev-only mock feed
+replays a captured snapshot through this same proxy, with fault injection and no
+credit cost. See [the mock feed runbook](mock-feed.md).
+
 ## On Vercel
 
 Vercel is the deployment target and the repository is imported as a Vercel
