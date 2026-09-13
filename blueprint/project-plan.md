@@ -1,72 +1,90 @@
 # Project Plan
 
-FlightScanner - a live aircraft map over the SkySpy WebSocket API.
+FlightScanner - a live aircraft map over the OpenSky Network REST API.
 
 The detailed technical plan is [`docs/flight-map-plan.md`](../docs/flight-map-plan.md);
 per-feature specs are in [`blueprint/context/features/`](context/features/). This
 document is the product-level source of truth those are derived from.
 
+> **Data source changed on 2026-09-13.** This project was planned against a
+> self-hosted SkySpy WebSocket API. No reachable instance ever existed, so the
+> build stalled after feature 2. The source is now the public OpenSky Network
+> REST API, verified live. The switch is not cosmetic: OpenSky is polled rather
+> than streamed, and it blocks browser origins, which is why this plan now
+> includes a backend proxy it previously ruled out.
+
 ## 1. Problem - What problem are we solving?
 
-SkySpy exposes a rich real-time aircraft feed - a WebSocket stream of ADS-B
-contacts plus REST lookups for airframe identity - but no map. The data is there
-and unreadable: JSON frames at up to 10 Hz describing objects whose whole meaning
-is spatial.
+Public ADS-B data is available but not watchable. OpenSky Network exposes live
+aircraft state vectors over REST, and they arrive as positional JSON arrays whose
+whole meaning is spatial: a list of numbers describing where things are and which
+way they are pointed.
 
-FlightScanner turns that stream into the obvious thing: a map you can watch.
+FlightScanner turns that feed into the obvious thing: a map you can watch.
 Aircraft appear where they are, pointed the way they are flying, coloured by
-altitude, and clicking one tells you what it is.
+altitude, and clicking one tells you what it is. OpenSky has its own map; this is
+not an attempt to beat it, it is a Flightradar24-style client built from the raw
+feed.
 
-Secondary purpose: it is a study project. The point is to build a genuinely
-resilient real-time client - correct reconnection, honest degraded states, a
-render path that survives high message rates - not just to get pixels moving.
+Secondary purpose: it is a study project. The original goal was WebSocket
+lifecycle management. Polling removes that, so the remaining architectural
+exercises are the real ones left: reconciling successive snapshots into stable
+aircraft identity, a render path that stays cheap as the fleet grows, honest
+degraded states, and working inside a hard external quota.
 
 ## 2. Users - Who is this for?
 
-- **The SkySpy operator** - someone running their own receiver who wants to see
-  what their antenna is picking up right now, without a terminal.
-- **Aviation enthusiasts** near that receiver, watching local traffic.
+- **Aviation enthusiasts** watching traffic over a chosen region, anywhere
+  OpenSky has coverage.
 - **The developer** - this is a learning project for real-time web architecture:
-  WebSocket lifecycle management, high-frequency state outside React, and GPU map
+  snapshot reconciliation, high-frequency state outside React, and GPU map
   rendering.
 
-Not built for: global coverage, commercial flight tracking, or anything
-safety-critical. A single self-hosted receiver sees a radius around one antenna.
+Not built for: global simultaneous coverage, commercial flight tracking, or
+anything safety-critical. The map shows one bounding box at a time, refreshed on
+an interval, not a continuous stream.
 
 ## 3. Features - What does the MVP need?
 
 v1, in build order - see `build-plan.md` for the tracked list:
 
 - Full-viewport dark map
-- Authenticated WebSocket connection with resilient reconnection
-- Aircraft store handling snapshot, update, new, remove, delta, heartbeat
+- A minimal backend proxy that reaches OpenSky and holds credentials
+- Polling client with backoff, visibility pause, and credit budget awareness
+- Aircraft store reconciling successive full snapshots into stable identities,
+  deriving departures and staleness
 - Aircraft rendered as heading-rotated icons, coloured by altitude
 - Click to select: highlight, trail, live telemetry panel
-- Connection status, counts, and honest degraded states
+- Poll status, counts, remaining credits, and honest degraded states
 
-v2 adds aircraft identity and photos from the airframes endpoint.
+v2 adds aircraft identity and photos from third-party sources, since OpenSky
+provides neither.
 
 Explicitly excluded from both: ACARS, safety events, alerts, NOTAMs, cannonball
 mode, audio, airspace overlays, filtering, search, and user accounts. Route and
-origin/destination data is not excluded by choice - **no SkySpy endpoint provides
-it**, so it is unavailable without a third-party source.
+origin/destination data is not excluded by choice - **no OpenSky endpoint
+provides it**, so it is unavailable without a third-party source.
 
 ## 4. Data - What are we storing?
 
-**Nothing persistently.** No database, no backend, no accounts. All state is
-in-memory and session-scoped:
+**Nothing persistently.** No database, no accounts. The proxy is stateless. All
+app state is in-memory and session-scoped:
 
 - `Map<hex, Aircraft>` - current contacts, keyed by ICAO hex. Never keyed on
   callsign; callsigns change and repeat.
 - Trail buffer - ~200 recent positions, for the selected aircraft only, cleared
   on deselect.
-- Airframe cache (v2) - identity and photo URLs per hex, including cached misses.
+- Identity cache (v2) - identity and photo per hex, including cached misses.
 
-Aircraft payload fields (`hex`, `lat`, `lon`, `alt_baro`, `gs`, `track`,
-`flight`, `squawk`, `baro_rate`, `distance_nm`) are all optional except `hex`.
-SkySpy's OpenAPI schema declares the aircraft object `additionalProperties: {}`,
-so the real shape is deployment-specific and must be confirmed from capture, not
-documentation.
+Aircraft fields (`hex`, `lat`, `lon`, `alt_baro`, `gs`, `track`, `flight`,
+`squawk`, `baro_rate`, `on_ground`, `lastContact`) are all optional except `hex`.
+OpenSky returns each aircraft as a **positional array, not an object**, so every
+index must be read by position and guarded. `distance_nm` is dropped: it was a
+SkySpy receiver-range value with no OpenSky equivalent.
+
+`lastContact` is new and load-bearing. Polling returns vectors that are already
+seconds or minutes old, so the client must distinguish when it last polled from
+when the aircraft was last actually heard.
 
 ## 5. Tech - What stack are we using?
 
@@ -75,24 +93,38 @@ documentation.
   Chosen over Leaflet deliberately: Leaflet renders each marker as a DOM node and
   stutters at a few thousand aircraft, while MapLibre draws them in one WebGL
   symbol layer.
-- **Native WebSocket, hand-rolled client** - SkySpy's subprotocol auth and
-  subscribe protocol are the whole job; a library would be wrapped anyway.
+- **Hand-rolled REST transport** - positional vector decoding, OAuth2 client
+  credentials with an early-refresh token cache, and a discriminated result type
+  that never throws into render.
+- **A minimal backend proxy** - Node, deployable as a serverless function. It is
+  required, not optional; see the CORS constraint below.
 - **Vitest + React Testing Library**, ESLint + Prettier
-- **No backend.** The app talks to SkySpy directly.
 
-Data source: self-hosted SkySpy. REST at `{HTTP_BASE}/api/v1/`, WebSocket at
-`{WS_BASE}/ws/aircraft/`.
+Data source: OpenSky Network. REST at `https://opensky-network.org/api`, OAuth2
+tokens from the public Keycloak realm.
 
-**Auth is settled: the token travels via the `Sec-WebSocket-Protocol` header.**
-No query-string fallback, not even in development - query strings leak tokens
-into server logs.
+**Verified live on 2026-09-13:**
+
+| Fact | Value |
+| --- | --- |
+| Token lifetime | 1800 s |
+| Bounded `states/all` query | 1 credit |
+| Authenticated budget | 4000 credits per day |
+| Anonymous budget | 400 credits per day per IP |
+| Minimum safe poll interval | 30 s |
+
+**The browser cannot call OpenSky directly.** It returns
+`Access-Control-Allow-Origin: https://opensky-network.org` to every origin,
+confirmed with a real preflight, and the token endpoint sends no CORS header at
+all. A proxy is therefore mandatory for the app to function, not merely to hide
+credentials. The proxy holds the client credentials server side, which also keeps
+them out of the browser bundle.
 
 ## 6. Monetize - How will this make money?
 
 It does not. This is a personal study project with no commercial intent, no ads,
-and no accounts. Any future public deployment would first need the token moved
-behind a backend proxy, since `VITE_`-prefixed values ship readable in the client
-bundle.
+and no accounts. The daily credit budget is the real constraint to respect, and
+the proxy is the natural place to enforce it.
 
 ## 7. UI/UX - How should this look and feel?
 
@@ -106,33 +138,39 @@ Borrowed: interaction patterns and general visual approach, common to aircraft
 trackers. **Not borrowed:** FR24's branding, logo, colour marks, icon artwork, or
 map tiles. Our own assets and palette throughout.
 
-Honest about its limits. Three failure modes must be visually distinguishable -
-disconnected, connected-but-silent, and token-rejected - because a frozen map
-that looks healthy is worse than one that admits it is stale. Aircraft that stop
-reporting fade rather than sitting at full brightness. Missing values render as
-dashes, never as zeros.
+Honest about its limits. Four failure modes must be visually distinguishable,
+because a frozen map that looks healthy is worse than one that admits it is
+stale:
 
-A sparse map is normal, not a bug: one receiver sees one radius.
+1. **Proxy unreachable** - retrying with backoff
+2. **Polling but the data is old** - OpenSky answered, the vectors are stale
+3. **Credit budget exhausted** - not an error, and retrying will not help until
+   the daily reset
+4. **Credentials rejected** - not retrying
+
+Aircraft that stop reporting fade rather than sitting at full brightness. Missing
+values render as dashes, never as zeros. A sparse map is normal: the map shows
+one bounding box, and OpenSky coverage varies by region.
 
 ## 8. Deployment - Where and how will this ship?
 
-**No deployment target yet - local development only.** The app is a static SPA
-(`vite build` → `dist/`), so any static host would serve it, but nothing is
-planned and `/release` has not been run.
+**No target chosen yet**, but deployment is now possible in principle, which it
+was not under the direct-to-API design. The app is a static SPA (`vite build` →
+`dist/`) plus one proxy endpoint, so a host that serves static files alongside a
+serverless function fits naturally.
 
-Two things must be resolved before it ships anywhere public:
+Constraints:
 
-1. **The token would be exposed.** Every `VITE_`-prefixed variable is baked into
-   the client bundle. A public deployment needs a small backend proxy holding the
-   token server-side.
-2. **CORS and mixed content.** An HTTPS page cannot open a `ws://` socket, and
-   browser REST calls need CORS configured on the SkySpy host. Development uses
-   Vite's dev proxy - which must be confirmed to forward
-   `Sec-WebSocket-Protocol` intact, since proxies that strip it break auth in
-   development only.
+1. **The proxy is required in every environment**, including local development.
+   Vite's dev proxy covers development; production needs the real thing.
+2. **Credentials live only on the proxy.** Nothing sensitive belongs in a
+   `VITE_` variable, since every one of them is readable in the client bundle.
+3. **The credit budget is per account, not per user.** A public deployment shares
+   one 4000 per day budget across everyone who loads it, so the poll interval and
+   any caching are deployment decisions, not just client ones.
 
-Env vars by name: `VITE_SKYSPY_HTTP`, `VITE_SKYSPY_WS`, `VITE_SKYSPY_TOKEN`,
-`VITE_MAP_STYLE_URL`, `VITE_DEFAULT_CENTER`, `VITE_DEFAULT_ZOOM`.
+Client env vars by name: `VITE_OPENSKY_API_BASE`, `VITE_OPENSKY_AUTH_URL`,
+`VITE_OPENSKY_POLL_MS`, `VITE_MAP_STYLE_URL`, `VITE_DEFAULT_CENTER`,
+`VITE_DEFAULT_ZOOM`. Server-side only: the OpenSky client ID and secret.
 
-No database, no workers, no cron. Health check not applicable - it is a static
-bundle.
+No database, no workers, no cron. Health check applies to the proxy only.
