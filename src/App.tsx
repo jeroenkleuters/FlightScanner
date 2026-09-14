@@ -1,8 +1,11 @@
+import { useCallback, useState } from 'react'
 import { usePolling } from './api/usePolling'
 import type { PollStatus } from './api/pollSchedule'
 import { AircraftLayer } from './map/AircraftLayer'
 import { FlightMap } from './map/FlightMap'
+import { TrailLayer } from './map/TrailLayer'
 import { useAircraftStore } from './store/useAircraftStore'
+import { AircraftDetailPanel } from './ui/AircraftDetailPanel'
 import { Legend } from './ui/Legend'
 
 const STATUS_TEXT: Record<PollStatus, string> = {
@@ -21,6 +24,12 @@ function figure(value: number | undefined): string {
 
 function App() {
   const { store, count } = useAircraftStore()
+  // Selection is the one piece of map state React owns. It changes on a click,
+  // not twice a minute for hundreds of aircraft, so the reconciler is the right
+  // place for it - unlike positions, which never go through React.
+  const [selectedHex, setSelectedHex] = useState<string | null>(null)
+  const clearSelection = useCallback(() => setSelectedHex(null), [])
+
   const { status, creditsRemaining } = usePolling({
     onSnapshot: store.applySnapshot,
   })
@@ -28,8 +37,18 @@ function App() {
   return (
     <div className="app-shell">
       <FlightMap>
-        <AircraftLayer store={store} />
+        <TrailLayer store={store} selectedHex={selectedHex} />
+        <AircraftLayer
+          store={store}
+          selectedHex={selectedHex}
+          onSelect={setSelectedHex}
+        />
       </FlightMap>
+      <AircraftDetailPanel
+        store={store}
+        hex={selectedHex}
+        onClose={clearSelection}
+      />
       <Legend />
       {/* Provisional. Feature 10 replaces this with the real status bar. */}
       <p className="poll-readout" aria-live="polite">

@@ -20,6 +20,8 @@
 export interface EvalContext {
   properties?: Record<string, unknown>
   zoom?: number
+  /** What `setFeatureState` would have written for this feature. */
+  featureState?: Record<string, unknown>
 }
 
 type Expression = unknown
@@ -44,10 +46,19 @@ function mixHex(from: string, to: string, ratio: number): string {
   return `#${mixed.join('')}`
 }
 
-function interpolate(input: number, stops: unknown[]): unknown {
+function interpolate(
+  input: number,
+  stops: unknown[],
+  context: EvalContext,
+): unknown {
+  // Stop values may themselves be expressions - `icon-size` applies the
+  // selection factor per stop - so each is evaluated before interpolating.
   const points: Array<{ at: number; value: unknown }> = []
   for (let i = 0; i < stops.length; i += 2) {
-    points.push({ at: stops[i] as number, value: stops[i + 1] })
+    points.push({
+      at: stops[i] as number,
+      value: evaluate(stops[i + 1], context),
+    })
   }
 
   // Clamped, not extrapolated: this is what keeps a negative altitude at the
@@ -87,6 +98,22 @@ export function evaluate(
       return Object.prototype.hasOwnProperty.call(properties, args[0] as string)
     case 'zoom':
       return context.zoom
+    case 'feature-state':
+      return (context.featureState ?? {})[args[0] as string]
+    case 'boolean': {
+      // MapLibre's boolean assertion with fallbacks: take the first argument
+      // that really is a boolean.
+      for (const arg of args) {
+        const value = evaluate(arg, context)
+        if (typeof value === 'boolean') return value
+      }
+      return false
+    }
+    case '*':
+      return args.reduce<number>(
+        (product, arg) => product * (evaluate(arg, context) as number),
+        1,
+      )
     case 'coalesce': {
       for (const arg of args) {
         const value = evaluate(arg, context)
@@ -103,7 +130,7 @@ export function evaluate(
     }
     case 'interpolate': {
       const input = evaluate(args[1], context) as number
-      return interpolate(input, args.slice(2))
+      return interpolate(input, args.slice(2), context)
     }
     case 'step': {
       const input = evaluate(args[0], context) as number

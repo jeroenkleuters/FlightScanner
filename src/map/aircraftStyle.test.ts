@@ -6,7 +6,9 @@ import {
   AIRCRAFT_SOURCE_ID,
   LABEL_MIN_ZOOM,
   aircraftLayout,
+  aircraftOpacity,
   aircraftPaint,
+  aircraftPaintFor,
   emptyFeatureCollection,
 } from './aircraftStyle'
 import { evaluate } from '../test/styleExpression'
@@ -54,6 +56,94 @@ describe('altitude colour ramp', () => {
   })
 })
 
+describe('selection styling', () => {
+  const selected = { selected: true }
+
+  const colorWith = (
+    properties: Record<string, unknown>,
+    featureState?: Record<string, unknown>,
+  ) => evaluate(aircraftPaint['icon-color'], { properties, featureState })
+
+  it('overrides the altitude ramp for the selected aircraft only', () => {
+    expect(colorWith({ alt_baro: 31_000 }, selected)).toBe(
+      AIRCRAFT_PALETTE.selected.color,
+    )
+    // Everyone else keeps their altitude colour.
+    expect(colorWith({ alt_baro: 25_000 })).toBe(fl250.color)
+  })
+
+  it('overrides the neutral for a selected aircraft with no altitude', () => {
+    expect(colorWith({ hex: 'abc123' }, selected)).toBe(
+      AIRCRAFT_PALETTE.selected.color,
+    )
+  })
+
+  it('does not try to size the selected icon from feature state', () => {
+    // MapLibre rejects feature-state in any layout property, and a rejected
+    // layout expression takes the whole layer down. Selection reads through
+    // colour and opacity instead, which are paint.
+    expect(JSON.stringify(aircraftLayout['icon-size'])).not.toContain(
+      'feature-state',
+    )
+    expect(JSON.stringify(aircraftLayout)).not.toContain('feature-state')
+  })
+
+  describe('opacity across selection and staleness together', () => {
+    // The four combinations that must all stay distinguishable: selecting one
+    // aircraft must not promote a stale contact back to looking live, and must
+    // not hide the rest of the fleet either.
+    const opacityOf = (
+      hasSelection: boolean,
+      properties: Record<string, unknown>,
+      featureState?: Record<string, unknown>,
+    ) =>
+      evaluate(aircraftOpacity(hasSelection), {
+        properties,
+        featureState,
+      }) as number
+
+    it('leaves the fleet untouched while nothing is selected', () => {
+      expect(opacityOf(false, { stale: false })).toBe(
+        AIRCRAFT_PALETTE.liveOpacity,
+      )
+      expect(opacityOf(false, { stale: true })).toBe(
+        AIRCRAFT_PALETTE.staleOpacity,
+      )
+    })
+
+    it('gives the selected aircraft full opacity even when it is stale', () => {
+      expect(opacityOf(true, { stale: true }, selected)).toBe(
+        AIRCRAFT_PALETTE.liveOpacity,
+      )
+    })
+
+    it('dims the rest, and dims a stale one further still', () => {
+      const live = opacityOf(true, { stale: false })
+      const stale = opacityOf(true, { stale: true })
+
+      expect(live).toBe(AIRCRAFT_PALETTE.dimmedOpacity)
+      expect(stale).toBe(AIRCRAFT_PALETTE.dimmedStaleOpacity)
+      // The stale fade survives selection rather than being flattened away.
+      expect(stale).toBeLessThan(live)
+    })
+
+    it('dims rather than hides, so the fleet stays readable', () => {
+      expect(opacityOf(true, { stale: true })).toBeGreaterThan(0.1)
+    })
+  })
+
+  it('carries the same opacity rule to the labels', () => {
+    for (const hasSelection of [false, true]) {
+      const paint = aircraftPaintFor(hasSelection)
+      expect(paint['text-opacity']).toEqual(paint['icon-opacity'])
+    }
+  })
+
+  it('keeps the no-selection constant equal to the no-selection function', () => {
+    expect(aircraftPaint).toEqual(aircraftPaintFor(false))
+  })
+})
+
 describe('stale fading', () => {
   it('dims a stale contact and leaves a live one at full strength', () => {
     expect(
@@ -95,6 +185,34 @@ describe('icon sizing', () => {
       0,
     )
     expect(evaluate(aircraftLayout['icon-size'], { zoom: 22 })).toBeLessThan(1)
+  })
+})
+
+describe('expression grammar MapLibre enforces at runtime', () => {
+  // These are not style preferences. MapLibre rejects a layout property that
+  // breaks them, and a rejected layout expression takes the whole layer down -
+  // which surfaces as an error before load, so FlightMap replaces the map with
+  // its failure state. Evaluating an expression by hand cannot catch this; only
+  // its shape can.
+  it('keeps zoom as the direct input of a top-level interpolate in icon-size', () => {
+    const size = aircraftLayout['icon-size'] as unknown[]
+
+    expect(size[0]).toBe('interpolate')
+    expect(size[2]).toEqual(['zoom'])
+  })
+
+  it('keeps zoom as the direct input of a top-level interpolate in text-size', () => {
+    const size = aircraftLayout['text-size'] as unknown[]
+
+    expect(size[0]).toBe('interpolate')
+    expect(size[2]).toEqual(['zoom'])
+  })
+
+  it('keeps zoom out of the paint expressions entirely', () => {
+    // Same rule, and paint has no legitimate need for zoom here.
+    for (const value of Object.values(aircraftPaintFor(true))) {
+      expect(JSON.stringify(value)).not.toContain('"zoom"')
+    }
   })
 })
 

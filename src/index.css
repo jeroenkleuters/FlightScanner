@@ -113,3 +113,110 @@ body {
   font-family: ui-monospace, Consolas, monospace;
   white-space: nowrap;
 }
+
+/* Selected-aircraft detail. Right side: the legend has bottom left, the poll
+   readout top left, and the attribution and navigation control bottom right. */
+.detail-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 260px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  /* Opaque, unlike the small overlays: this one carries a block of text, and at
+     92% the basemap's place labels read straight through the telemetry. */
+  background: #10141a;
+  border: 1px solid #232a34;
+  color: #cfd6df;
+}
+
+.detail-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.detail-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffb043;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-header button {
+  border: 0;
+  background: none;
+  color: #8b96a5;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.detail-header button:hover,
+.detail-header button:focus-visible {
+  color: #e6e6e6;
+}
+
+/* Reserved for features 13-14. Holds its height so adding identity and a photo
+   does not reflow the telemetry below. */
+.detail-identity {
+  min-height: 12px;
+}
+
+.detail-status {
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.detail-status-stale {
+  background: rgba(255, 176, 67, 0.12);
+  color: #ffb043;
+}
+
+.detail-status-lost {
+  background: rgba(229, 103, 103, 0.12);
+  color: #e66767;
+}
+
+.detail-telemetry {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-row dt {
+  color: #8b96a5;
+}
+
+.detail-row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.aircraft-tooltip .maplibregl-popup-content {
+  padding: 3px 7px;
+  border-radius: 3px;
+  background: rgba(16, 20, 26, 0.92);
+  color: #e6e6e6;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: none;
+}
+
+.aircraft-tooltip .maplibregl-popup-tip {
+  display: none;
+}

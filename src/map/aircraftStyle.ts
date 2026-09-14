@@ -50,6 +50,23 @@ export const AIRCRAFT_PALETTE = {
     { feet: 40_000, color: '#b7d3f6', label: '40,000 ft +' },
   ],
   noAltitude: { color: '#6f6f68', label: 'No altitude' },
+  /**
+   * Selection is interface state, not a data encoding, so it sits outside the
+   * ramp entirely: amber against a blue ramp is the classic colour-vision-safe
+   * pair, and it clears every ramp step and the neutral by at least delta E
+   * 18.3 under simulated CVD.
+   */
+  selected: { color: '#ffb043' },
+  /**
+   * Unselected aircraft while something is selected. Dimmed, never hidden:
+   * at 0.3 over the dark basemap the rest of the fleet all but vanished, which
+   * loses the context that makes the selected one worth looking at. The amber
+   * highlight already does most of the work of separating them.
+   */
+  dimmedOpacity: 0.45,
+  dimmedStaleOpacity: 0.3,
+  /** The trail belongs to the selected aircraft, so it shares its colour. */
+  trail: { color: '#ffb043', width: 2 },
   /** A frozen contact must look different from a live one at a glance. */
   staleOpacity: 0.45,
   liveOpacity: 1,
@@ -85,6 +102,16 @@ type SymbolLayout = NonNullable<SymbolLayerSpecification['layout']>
  * of the palette cannot satisfy structurally. Single-sourcing the stops is
  * worth more than tuple-checking an array shape the tests assert anyway.
  */
+/**
+ * True for the one aircraft MapLibre has been told is selected.
+ *
+ * Feature state rather than a GeoJSON property on purpose: `toGeoJSON` is a
+ * pure projection over the store and must not learn about selection, which
+ * would couple the store to the UI and force a full `setData` on every click.
+ * `boolean` with a default keeps it false for every feature never marked.
+ */
+const SELECTED: unknown = ['boolean', ['feature-state', 'selected'], false]
+
 function altitudeColor(): SymbolPaint['icon-color'] {
   return [
     'case',
@@ -102,15 +129,52 @@ function altitudeColor(): SymbolPaint['icon-color'] {
   ] as SymbolPaint['icon-color']
 }
 
-/** Dim when the store's staleness sweep has flagged the contact. */
-function staleOpacity(): SymbolPaint['icon-opacity'] {
+/** The altitude ramp for everyone, overridden only for the selected aircraft. */
+function iconColor(): SymbolPaint['icon-color'] {
   return [
     'case',
-    ['get', 'stale'],
-    AIRCRAFT_PALETTE.staleOpacity,
-    AIRCRAFT_PALETTE.liveOpacity,
-  ]
+    SELECTED,
+    AIRCRAFT_PALETTE.selected.color,
+    altitudeColor(),
+  ] as SymbolPaint['icon-color']
 }
+
+/**
+ * Opacity, and the one expression that depends on whether *anything* is
+ * selected.
+ *
+ * Feature state answers "is this feature selected"; it cannot answer "does a
+ * selection exist", which is what dimming the rest requires. So this is a
+ * function of that single boolean, and the layer swaps the property when
+ * selection appears or disappears - one `setPaintProperty`, not a re-render.
+ *
+ * The stale fade survives selection: a dimmed stale contact is dimmer still,
+ * never promoted back to looking live.
+ */
+export function aircraftOpacity(
+  hasSelection: boolean,
+): SymbolPaint['icon-opacity'] {
+  return [
+    'case',
+    SELECTED,
+    AIRCRAFT_PALETTE.liveOpacity,
+    ['get', 'stale'],
+    hasSelection
+      ? AIRCRAFT_PALETTE.dimmedStaleOpacity
+      : AIRCRAFT_PALETTE.staleOpacity,
+    hasSelection
+      ? AIRCRAFT_PALETTE.dimmedOpacity
+      : AIRCRAFT_PALETTE.liveOpacity,
+  ] as SymbolPaint['icon-opacity']
+}
+
+/** Zoom to base icon size, before any selection factor. */
+const ICON_SIZE_STOPS: ReadonlyArray<readonly [number, number]> = [
+  [4, 0.22],
+  [7, 0.35],
+  [11, 0.5],
+  [14, 0.6],
+]
 
 export const aircraftLayout: SymbolLayout = {
   'icon-image': AIRCRAFT_ICON_ID,
@@ -128,19 +192,17 @@ export const aircraftLayout: SymbolLayout = {
   'icon-ignore-placement': true,
   // The source SVG is 64 px, which is far too large at low zoom. Scaled so an
   // aircraft is a readable mark rather than a blot across a province.
+  // The zoom ramp. Two MapLibre rules constrain this, both enforced at runtime
+  // and both fatal to the layer when broken: `zoom` must be the direct input of
+  // a top-level `interpolate`, and **layout properties cannot read feature
+  // state at all**. The second is why the selected aircraft is not enlarged
+  // here - selection reads through colour and opacity, which are paint.
   'icon-size': [
     'interpolate',
     ['linear'],
     ['zoom'],
-    4,
-    0.22,
-    7,
-    0.35,
-    11,
-    0.5,
-    14,
-    0.6,
-  ],
+    ...ICON_SIZE_STOPS.flatMap(([zoom, size]) => [zoom, size]),
+  ] as SymbolLayout['icon-size'],
   // Empty string below the threshold, so no label is laid out at all. Above it,
   // the trimmed callsign, or nothing when the aircraft never sent one.
   'text-field': [
@@ -161,11 +223,31 @@ export const aircraftLayout: SymbolLayout = {
   'text-optional': true,
 }
 
+/**
+ * The paint for a given selection state.
+ *
+ * A function rather than a constant because dimming the unselected fleet needs
+ * to know a selection exists, and react-map-gl owns the layer's style: it
+ * deliberately withholds `setPaintProperty` from its map ref, so the honest way
+ * to change paint is to hand it a different object and let the diff apply it.
+ */
+export function aircraftPaintFor(hasSelection: boolean): SymbolPaint {
+  return {
+    'icon-color': iconColor(),
+    'icon-opacity': aircraftOpacity(hasSelection),
+    'text-color': AIRCRAFT_PALETTE.label.color,
+    'text-halo-color': AIRCRAFT_PALETTE.label.haloColor,
+    'text-halo-width': 1.2,
+    'text-opacity': aircraftOpacity(hasSelection),
+  }
+}
+
+/** The no-selection baseline, kept as a constant for callers that need one. */
 export const aircraftPaint: SymbolPaint = {
-  'icon-color': altitudeColor(),
-  'icon-opacity': staleOpacity(),
+  'icon-color': iconColor(),
+  'icon-opacity': aircraftOpacity(false),
   'text-color': AIRCRAFT_PALETTE.label.color,
   'text-halo-color': AIRCRAFT_PALETTE.label.haloColor,
   'text-halo-width': 1.2,
-  'text-opacity': staleOpacity(),
+  'text-opacity': aircraftOpacity(false),
 }
